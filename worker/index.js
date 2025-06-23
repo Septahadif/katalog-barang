@@ -108,22 +108,36 @@ const INDEX_HTML = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Katalog Barang</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
   <style>
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    .title-center {
+      text-align: center;
+      flex-grow: 1;
+    }
+    .login-btn {
+      background-color: #4b5563;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      transform: scale(0.9);
+    }
+    
+    /* Cropper Styles */
     .cropper-container { 
-      width: 100%; 
-      height: 300px; 
-      position: relative; 
+      width: 100%;
+      height: 400px;
+      position: relative;
       overflow: hidden;
       border: 2px dashed #ccc;
       background-color: #f5f5f5;
-      margin-top: 10px;
-    }
-    .cropper-preview { 
-      position: absolute;
-      max-width: none;
-      cursor: move;
-      transform-origin: 0 0;
-      transition: transform 0.1s ease;
+      margin-top: 1rem;
     }
     .cropper-overlay {
       position: absolute;
@@ -137,29 +151,30 @@ const INDEX_HTML = `<!DOCTYPE html>
       pointer-events: none;
     }
     .cropper-grid-cell { 
-      border: 1px dashed rgba(0,0,0,0.3);
+      border: 1px dashed rgba(0,0,0,0.2);
     }
-    .cropper-controls { 
-      position: absolute; 
-      bottom: 10px; 
-      width: 100%; 
+    .cropper-controls {
+      position: absolute;
+      bottom: 15px;
+      width: 100%;
       text-align: center;
       display: flex;
       justify-content: center;
-      gap: 10px;
+      gap: 15px;
+      z-index: 10;
     }
     .zoom-controls {
       position: absolute;
-      top: 10px;
-      right: 10px;
+      top: 15px;
+      right: 15px;
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 8px;
       z-index: 10;
     }
     .zoom-btn {
-      width: 30px;
-      height: 30px;
+      width: 36px;
+      height: 36px;
       background: white;
       border-radius: 50%;
       display: flex;
@@ -169,75 +184,103 @@ const INDEX_HTML = `<!DOCTYPE html>
       cursor: pointer;
       border: none;
       font-weight: bold;
+      font-size: 1.2rem;
     }
-    .aspect-square { aspect-ratio: 1/1; }
-    .login-modal-buttons {
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
+    
+    /* Item Styles */
+    .item-card {
+      background: white;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: transform 0.2s;
     }
-    #adminControls {
-      transition: all 0.3s ease;
+    .item-card:hover {
+      transform: translateY(-2px);
     }
-    .image-preview {
-      max-width: 100%;
-      height: auto;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      margin-top: 10px;
-    }
-    .header-container {
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      margin-bottom: 1rem;
-      position: relative;
-      flex-direction: column;
-    }
-    .title-center {
-      text-align: center;
+    .item-image {
       width: 100%;
-      margin-bottom: 0.5rem;
+      aspect-ratio: 1/1;
+      object-fit: cover;
     }
-    .login-btn-container {
-      position: absolute;
-      right: 0;
-      top: 0;
+    .item-info {
+      padding: 1rem;
     }
-    .login-btn {
-      background-color: #4b5563;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
+    .item-name {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .item-price {
+      color: #4b5563;
       font-size: 0.875rem;
+    }
+    
+    /* Loading Indicator */
+    .loading {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.9);
+      padding: 1.5rem;
+      border-radius: 0.5rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      z-index: 1000;
+      text-align: center;
+    }
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      margin: 0 auto 1rem;
+    }
+    
+    /* Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-content {
+      background: white;
+      border-radius: 0.5rem;
+      width: 90%;
+      max-width: 400px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
   </style>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-  <div class="w-full max-w-xl">
+<body class="bg-gray-100 min-h-screen p-4">
+  <div class="max-w-4xl mx-auto">
     <div class="header-container">
       <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
-      <div class="login-btn-container">
-        <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
-          Login Admin
-        </button>
-      </div>
+      <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
+        Login Admin
+      </button>
     </div>
     
     <!-- Admin Login Modal -->
-    <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white p-6 rounded-lg shadow-lg w-80">
+    <div id="loginModal" class="modal-overlay hidden">
+      <div class="modal-content">
         <h2 class="text-xl font-bold mb-4">Login Admin</h2>
         <form id="loginForm" class="space-y-4">
           <div>
-            <label class="block mb-1">Username</label>
+            <label class="block mb-1 text-sm font-medium">Username</label>
             <input type="text" id="loginUsername" class="w-full border p-2 rounded" required>
           </div>
           <div>
-            <label class="block mb-1">Password</label>
+            <label class="block mb-1 text-sm font-medium">Password</label>
             <input type="password" id="loginPassword" class="w-full border p-2 rounded" required>
           </div>
-          <div class="login-modal-buttons">
+          <div class="flex gap-3">
             <button type="button" id="cancelLoginBtn" class="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
               Batal
             </button>
@@ -256,7 +299,7 @@ const INDEX_HTML = `<!DOCTYPE html>
       </button>
       
       <!-- Form Tambah Barang -->
-      <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
+      <form id="formBarang" class="bg-white p-4 rounded-lg shadow space-y-4 mb-6">
         <div>
           <label class="block mb-1 font-medium">Nama Barang</label>
           <input id="nama" name="nama" type="text" required class="w-full border p-2 rounded">
@@ -267,7 +310,16 @@ const INDEX_HTML = `<!DOCTYPE html>
         </div>
         <div>
           <label class="block mb-1 font-medium">Satuan</label>
-          <input id="satuan" name="satuan" type="text" required class="w-full border p-2 rounded">
+          <select id="satuan" class="w-full border p-2 rounded">
+            <option value="pcs">pcs</option>
+            <option value="lusin">lusin</option>
+            <option value="pak">pak</option>
+            <option value="rol">rol</option>
+            <option value="bal">bal</option>
+            <option value="karton">karton</option>
+            <option value="gros">gros</option>
+            <option value="toples">toples</option>
+          </select>
         </div>
         <div>
           <label class="block mb-1 font-medium">Gambar</label>
@@ -286,10 +338,10 @@ const INDEX_HTML = `<!DOCTYPE html>
               <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
             </div>
             <div class="cropper-controls">
-              <button type="button" id="cropCancel" class="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 transition">
+              <button type="button" id="cropCancel" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
                 Batal
               </button>
-              <button type="button" id="cropConfirm" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition">
+              <button type="button" id="cropConfirm" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
                 Simpan
               </button>
             </div>
@@ -302,9 +354,16 @@ const INDEX_HTML = `<!DOCTYPE html>
     </div>
 
     <!-- Katalog -->
-    <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
+    <div id="katalog" class="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"></div>
   </div>
 
+  <!-- Loading Indicator -->
+  <div id="loading" class="loading hidden">
+    <img src="https://i.gifer.com/ZZ5H.gif" alt="Loading" class="loading-spinner">
+    <p>Menyimpan barang...</p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
   <script src="script.js"></script>
 </body>
 </html>`;
@@ -313,23 +372,8 @@ const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
     this.isAdmin = false;
-    this.cropper = {
-      image: null,
-      startX: 0,
-      startY: 0,
-      offsetX: 0,
-      offsetY: 0,
-      isDragging: false,
-      naturalWidth: 0,
-      naturalHeight: 0,
-      previewWidth: 0,
-      previewHeight: 0,
-      scale: 1,
-      minScale: 0.5,
-      maxScale: 3,
-      lastX: 0,
-      lastY: 0
-    };
+    this.cropper = null;
+    this.cropImageBlob = null;
     
     this.initElements();
     this.initEventListeners();
@@ -353,6 +397,7 @@ class BarangApp {
     this.fileInput = document.getElementById('gambar');
     this.zoomInBtn = document.getElementById('zoomIn');
     this.zoomOutBtn = document.getElementById('zoomOut');
+    this.loadingIndicator = document.getElementById('loading');
   }
 
   initEventListeners() {
@@ -366,14 +411,6 @@ class BarangApp {
     this.cropCancel.addEventListener('click', () => this.cancelCrop());
     this.zoomInBtn.addEventListener('click', () => this.zoom(1.2));
     this.zoomOutBtn.addEventListener('click', () => this.zoom(0.8));
-    
-    // Cropper drag events
-    this.cropperPreview.addEventListener('mousedown', (e) => this.startDrag(e));
-    document.addEventListener('mousemove', (e) => this.drag(e));
-    document.addEventListener('mouseup', () => this.endDrag());
-    this.cropperPreview.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
-    document.addEventListener('touchmove', (e) => this.drag(e.touches[0]));
-    document.addEventListener('touchend', () => this.endDrag());
   }
 
   showLoginModal() {
@@ -461,181 +498,75 @@ class BarangApp {
       this.cropperPreview.src = event.target.result;
       this.cropperContainer.classList.remove('hidden');
       
-      this.cropper.image = new Image();
-      this.cropper.image.onload = () => {
-        this.cropper.naturalWidth = this.cropper.image.naturalWidth;
-        this.cropper.naturalHeight = this.cropper.image.naturalHeight;
-        this.cropper.scale = 1;
-        
-        // Calculate initial dimensions to fit container
-        const containerWidth = this.cropperContainer.offsetWidth;
-        const containerHeight = this.cropperContainer.offsetHeight;
-        
-        const ratio = Math.min(
-          containerWidth / this.cropper.naturalWidth,
-          containerHeight / this.cropper.naturalHeight
-        );
-        
-        this.cropper.previewWidth = this.cropper.naturalWidth * ratio;
-        this.cropper.previewHeight = this.cropper.naturalHeight * ratio;
-        
-        this.updateImagePosition();
-        this.centerImage();
-      };
-      this.cropper.image.src = event.target.result;
+      // Inisialisasi Cropper.js
+      if (this.cropper) {
+        this.cropper.destroy();
+      }
+      
+      this.cropper = new Cropper(this.cropperPreview, {
+        aspectRatio: 1,
+        viewMode: 1,
+        dragMode: 'move',
+        autoCropArea: 0.8,
+        responsive: true,
+        zoomable: true,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        minContainerWidth: 300,
+        minContainerHeight: 300
+      });
     };
     reader.readAsDataURL(file);
   }
 
-  centerImage() {
-    const containerWidth = this.cropperContainer.offsetWidth;
-    const containerHeight = this.cropperContainer.offsetHeight;
-    
-    this.cropper.offsetX = (containerWidth - this.cropper.previewWidth * this.cropper.scale) / 2;
-    this.cropper.offsetY = (containerHeight - this.cropper.previewHeight * this.cropper.scale) / 2;
-    
-    this.updateImagePosition();
-  }
-
   zoom(factor) {
-    const newScale = this.cropper.scale * factor;
+    if (!this.cropper) return;
     
-    // Batasi zoom in/out
-    if (newScale < this.cropper.minScale || newScale > this.cropper.maxScale) {
-      return;
+    if (factor > 1) {
+      this.cropper.zoom(factor - 1);
+    } else {
+      this.cropper.zoom(-(1 - factor));
     }
-    
-    this.cropper.scale = newScale;
-    this.updateImagePosition();
-  }
-
-  updateImagePosition() {
-    this.cropperPreview.style.width = this.cropper.previewWidth + 'px';
-    this.cropperPreview.style.height = this.cropper.previewHeight + 'px';
-    this.cropperPreview.style.left = this.cropper.offsetX + 'px';
-    this.cropperPreview.style.top = this.cropper.offsetY + 'px';
-    this.cropperPreview.style.transform = 'scale(' + this.cropper.scale + ')';
-  }
-
-  startDrag(e) {
-    e.preventDefault();
-    this.cropper.isDragging = true;
-    this.cropper.startX = e.clientX;
-    this.cropper.startY = e.clientY;
-    this.cropper.lastX = e.clientX;
-    this.cropper.lastY = e.clientY;
-    this.cropper.offsetX = parseFloat(this.cropperPreview.style.left) || 0;
-    this.cropper.offsetY = parseFloat(this.cropperPreview.style.top) || 0;
-  }
-
-  drag(e) {
-    if (!this.cropper.isDragging) return;
-    e.preventDefault();
-    
-    this.cropper.lastX = e.clientX;
-    this.cropper.lastY = e.clientY;
-    
-    const dx = e.clientX - this.cropper.startX;
-    const dy = e.clientY - this.cropper.startY;
-    
-    const newX = this.cropper.offsetX + dx;
-    const newY = this.cropper.offsetY + dy;
-    
-    // Apply boundaries to prevent dragging outside container
-    const maxX = this.cropperContainer.offsetWidth - (this.cropper.previewWidth * this.cropper.scale);
-    const maxY = this.cropperContainer.offsetHeight - (this.cropper.previewHeight * this.cropper.scale);
-    
-    const boundedX = Math.max(0, Math.min(maxX, newX));
-    const boundedY = Math.max(0, Math.min(maxY, newY));
-    
-    this.cropper.offsetX = boundedX;
-    this.cropper.offsetY = boundedY;
-    this.cropper.startX = e.clientX;
-    this.cropper.startY = e.clientY;
-    
-    this.updateImagePosition();
-  }
-
-  endDrag() {
-    this.cropper.isDragging = false;
   }
 
   applyCrop() {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    if (!this.cropper) return;
     
-    // Set canvas size (1:1 ratio)
-    const size = Math.min(
-      this.cropperContainer.offsetWidth, 
-      this.cropperContainer.offsetHeight
-    );
-    canvas.width = size;
-    canvas.height = size;
+    // Dapatkan canvas yang sudah di-crop
+    const canvas = this.cropper.getCroppedCanvas({
+      width: 800,
+      height: 800,
+      minWidth: 400,
+      minHeight: 400,
+      maxWidth: 2000,
+      maxHeight: 2000,
+      fillColor: '#fff',
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: 'high'
+    });
     
-    // Calculate scale factors
-    const scaleX = this.cropper.naturalWidth / (this.cropper.previewWidth * this.cropper.scale);
-    const scaleY = this.cropper.naturalHeight / (this.cropper.previewHeight * this.cropper.scale);
-    
-    // Calculate source coordinates relative to container
-    const previewLeft = parseFloat(this.cropperPreview.style.left) || 0;
-    const previewTop = parseFloat(this.cropperPreview.style.top) || 0;
-    
-    // Calculate actual crop area in original image coordinates
-    const sx = -previewLeft * scaleX;
-    const sy = -previewTop * scaleY;
-    const sWidth = this.cropperContainer.offsetWidth * scaleX;
-    const sHeight = this.cropperContainer.offsetHeight * scaleY;
-    
-    // Draw cropped image (1:1 ratio)
-    ctx.drawImage(
-      this.cropper.image,
-      sx, sy, sWidth, sHeight,
-      0, 0, size, size
-    );
-    
-    // Convert to blob and update file input
-    const fileExt = this.fileInput.files[0].name.split('.').pop().toLowerCase();
-    const mimeType = this.getMimeType(fileExt);
-    
+    // Konversi ke blob
     canvas.toBlob((blob) => {
-      const fileName = 'cropped.' + fileExt;
-      const file = new File([blob], fileName, { type: mimeType });
-      const dataTransfer = new DataTransfer();
-      dataTransfer.items.add(file);
-      this.fileInput.files = dataTransfer.files;
+      this.cropImageBlob = blob;
       
       // Preview hasil crop
       const previewUrl = URL.createObjectURL(blob);
       const preview = document.createElement('img');
       preview.src = previewUrl;
-      preview.className = 'w-full mt-2';
+      preview.className = 'w-full mt-4 rounded border image-preview';
       this.form.querySelector('.image-preview')?.remove();
       this.form.querySelector('#gambar').after(preview);
-      preview.classList.add('image-preview');
       
       this.cancelCrop();
-    }, mimeType, 0.9);
-  }
-
-  getMimeType(ext) {
-    const types = {
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      png: 'image/png',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      bmp: 'image/bmp',
-      avif: 'image/avif'
-    };
-    return types[ext] || 'image/jpeg';
+    }, 'image/jpeg', 0.92);
   }
 
   cancelCrop() {
     this.cropperContainer.classList.add('hidden');
-    this.cropperPreview.style.left = '0';
-    this.cropperPreview.style.top = '0';
-    this.cropper.scale = 1;
-    this.cropperPreview.style.transform = 'scale(1)';
+    if (this.cropper) {
+      this.cropper.destroy();
+      this.cropper = null;
+    }
   }
 
   async handleSubmit(e) {
@@ -645,28 +576,23 @@ class BarangApp {
     try {
       submitBtn.disabled = true;
       submitBtn.textContent = 'Memproses...';
+      this.loadingIndicator.style.display = 'block';
 
       const formData = {
         nama: this.form.nama.value.trim(),
         harga: this.form.harga.value.trim(),
         satuan: this.form.satuan.value.trim(),
-        gambar: this.form.gambar.files[0]
+        gambar: this.cropImageBlob
       };
 
       if (!formData.nama || !formData.harga || !formData.satuan || !formData.gambar) {
         throw new Error('Semua field harus diisi');
       }
 
-      // Dapatkan ekstensi file asli
-      const fileExt = formData.gambar.name.split('.').pop().toLowerCase();
-      
-      // Convert image to base64 dengan type yang sesuai
+      // Convert image to base64
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => {
-          const base64Data = reader.result.split(',')[1] || reader.result;
-          resolve('data:image/' + fileExt + ';base64,' + base64Data);
-        };
+        reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
         reader.readAsDataURL(formData.gambar);
       });
@@ -696,12 +622,13 @@ class BarangApp {
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Tambah Barang';
+      this.loadingIndicator.style.display = 'none';
     }
   }
 
   async loadBarang() {
     try {
-      this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
+      this.katalog.innerHTML = '<div class="text-center py-8"><p class="text-gray-500">Memuat data katalog...</p></div>';
       
       const response = await fetch('/api/list');
       if (!response.ok) throw new Error('Gagal memuat data');
@@ -709,7 +636,7 @@ class BarangApp {
       const items = await response.json();
       
       if (items.length === 0) {
-        this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
+        this.katalog.innerHTML = '<div class="text-center py-8"><p class="text-gray-500">Belum ada barang.</p></div>';
         return;
       }
 
@@ -720,20 +647,25 @@ class BarangApp {
         const escapedSatuan = this.escapeHtml(item.satuan);
         const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
         
-        return '<div class="bg-white p-3 rounded shadow" data-id="' + escapedId + '">' +
-          '<div class="aspect-square overflow-hidden">' +
-            '<img src="' + escapedBase64 + '" alt="' + escapedNama + '" class="w-full h-full object-cover">' +
-          '</div>' +
-          '<h2 class="text-lg font-semibold mt-2">' + escapedNama + '</h2>' +
-          '<p class="text-sm text-gray-600">Rp ' + hargaFormatted + ' / ' + escapedSatuan + '</p>' +
-          (this.isAdmin ? 
-            '<button onclick="app.hapusBarang(\\'' + escapedId + '\\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
-            : '') +
-        '</div>';
+        return \`
+          <div class="item-card" data-id="\${escapedId}">
+            <img src="\${escapedBase64}" alt="\${escapedNama}" class="item-image">
+            <div class="item-info">
+              <h3 class="item-name">\${escapedNama}</h3>
+              <p class="item-price">Rp \${hargaFormatted} / \${escapedSatuan}</p>
+              \${this.isAdmin ? 
+                \`<div class="flex gap-2 mt-3">
+                  <button onclick="app.hapusBarang('\${escapedId}')" class="btn-delete px-3 py-1 text-sm rounded">
+                    Hapus
+                  </button>
+                </div>\` : ''}
+            </div>
+          </div>
+        \`;
       }).join('');
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = '<div class="text-center py-4 text-red-500"><p>Gagal memuat data: ' + this.escapeHtml(error.message) + '</p></div>';
+      this.katalog.innerHTML = '<div class="text-center py-8 text-red-500"><p>Gagal memuat data: ' + this.escapeHtml(error.message) + '</p></div>';
     }
   }
 
