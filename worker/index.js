@@ -3,28 +3,24 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Serve HTML
     if (path === "/" || path === "/index.html") {
       return new Response(INDEX_HTML, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
 
-    // Serve JS
     if (path === "/script.js") {
       return new Response(SCRIPT_JS, {
         headers: { "Content-Type": "application/javascript; charset=utf-8" },
       });
     }
 
-    // Serve Cropper CSS
     if (path === "/cropper.css") {
       return new Response(CROPPER_CSS, {
         headers: { "Content-Type": "text/css" },
       });
     }
 
-    // Login Admin
     if (path === "/api/login" && req.method === "POST") {
       const { username, password } = await req.json();
       const isAdmin = username === "septa" && password === "septa2n2n";
@@ -40,7 +36,6 @@ export default {
       return new Response(JSON.stringify({ success: false }), { status: 401 });
     }
 
-    // Check Admin Status
     if (path === "/api/check-admin") {
       const cookie = req.headers.get("Cookie") || "";
       return new Response(JSON.stringify({ isAdmin: cookie.includes("admin=true") }), {
@@ -48,7 +43,6 @@ export default {
       });
     }
 
-    // Logout
     if (path === "/api/logout") {
       return new Response(JSON.stringify({ success: true }), {
         headers: { 
@@ -58,7 +52,6 @@ export default {
       });
     }
 
-    // GET list barang
     if (path === "/api/list") {
       const data = await env.KATALOG.get("items");
       return new Response(data || "[]", {
@@ -66,7 +59,6 @@ export default {
       });
     }
 
-    // POST tambah barang (hanya admin)
     if (path === "/api/tambah" && req.method === "POST") {
       const cookie = req.headers.get("Cookie") || "";
       if (!cookie.includes("admin=true")) {
@@ -85,7 +77,6 @@ export default {
       });
     }
 
-    // POST hapus barang (hanya admin)
     if (path === "/api/hapus" && req.method === "POST") {
       const cookie = req.headers.get("Cookie") || "";
       if (!cookie.includes("admin=true")) {
@@ -119,70 +110,12 @@ const INDEX_HTML = `<!DOCTYPE html>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
   <style>
-    .cropper-modal {
-      background-color: white;
-    }
-    .cropper-container {
-      max-height: 400px;
-    }
-    .cropper-crop-box, .cropper-view-box {
-      border-radius: 50%;
-    }
     .cropper-view-box {
-      box-shadow: 0 0 0 1px #39f;
-      outline: 0;
+      outline: 1px solid #39f;
+      border-radius: 0;
     }
-    .cropper-dashed {
-      border: 0 dashed #eee;
-    }
-    .cropper-point {
-      background-color: #39f;
-      width: 10px;
-      height: 10px;
-      opacity: 1;
-    }
-    .cropper-line {
-      background-color: #39f;
-    }
-    .login-modal-buttons {
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
-    }
-    #adminControls {
-      transition: all 0.3s ease;
-    }
-    .image-preview {
-      max-width: 100%;
-      height: auto;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      margin-top: 10px;
-    }
-    .header-container {
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      margin-bottom: 1rem;
-      position: relative;
-      flex-direction: column;
-    }
-    .title-center {
-      text-align: center;
-      width: 100%;
-      margin-bottom: 0.5rem;
-    }
-    .login-btn-container {
-      position: absolute;
-      right: 0;
-      top: 0;
-    }
-    .login-btn {
-      background-color: #4b5563;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
-      font-size: 0.875rem;
+    .cropper-modal {
+      background: white;
     }
     #cropModal {
       display: none;
@@ -191,44 +124,38 @@ const INDEX_HTML = `<!DOCTYPE html>
       left: 0;
       width: 100%;
       height: 100%;
-      background-color: rgba(0,0,0,0.8);
+      background: rgba(0,0,0,0.8);
       z-index: 1000;
       justify-content: center;
       align-items: center;
     }
-    #cropModalContent {
+    #cropContainer {
       background: white;
       padding: 20px;
       border-radius: 8px;
       max-width: 90%;
       max-height: 90%;
     }
-    #cropImage {
+    #imagePreview {
       max-width: 100%;
-      max-height: 70vh;
-    }
-    .crop-actions {
-      margin-top: 15px;
-      display: flex;
-      justify-content: center;
-      gap: 10px;
+      max-height: 200px;
+      margin-top: 10px;
     }
   </style>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-  <div class="w-full max-w-xl">
-    <div class="header-container">
-      <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
-      <div class="login-btn-container">
-        <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
-          Login Admin
-        </button>
-      </div>
+<body class="bg-gray-100 min-h-screen p-4">
+  <div class="max-w-3xl mx-auto">
+    <!-- Header dengan tombol login di bawah judul -->
+    <div class="text-center mb-6">
+      <h1 class="text-3xl font-bold text-gray-800">📦 Katalog Barang</h1>
+      <button id="showLoginBtn" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+        Login Admin
+      </button>
     </div>
-    
+
     <!-- Admin Login Modal -->
     <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white p-6 rounded-lg shadow-lg w-80">
+      <div class="bg-white p-6 rounded-lg shadow-xl w-80">
         <h2 class="text-xl font-bold mb-4">Login Admin</h2>
         <form id="loginForm" class="space-y-4">
           <div>
@@ -239,7 +166,7 @@ const INDEX_HTML = `<!DOCTYPE html>
             <label class="block mb-1">Password</label>
             <input type="password" id="loginPassword" class="w-full border p-2 rounded" required>
           </div>
-          <div class="login-modal-buttons">
+          <div class="flex gap-2">
             <button type="button" id="cancelLoginBtn" class="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
               Batal
             </button>
@@ -253,10 +180,12 @@ const INDEX_HTML = `<!DOCTYPE html>
 
     <!-- Crop Modal -->
     <div id="cropModal">
-      <div id="cropModalContent">
-        <h3 class="text-lg font-bold mb-3">Crop Gambar</h3>
-        <img id="cropImage">
-        <div class="crop-actions">
+      <div id="cropContainer">
+        <h3 class="text-lg font-bold mb-3">Atur Posisi Gambar</h3>
+        <div class="cropper-container" style="height: 300px">
+          <img id="cropImage">
+        </div>
+        <div class="flex justify-center gap-2 mt-4">
           <button id="cancelCrop" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
             Batal
           </button>
@@ -268,54 +197,54 @@ const INDEX_HTML = `<!DOCTYPE html>
     </div>
 
     <!-- Admin Controls -->
-    <div id="adminControls" class="hidden mb-6">
-      <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
-        Logout
-      </button>
-      
+    <div id="adminControls" class="hidden mb-8 bg-white p-4 rounded-lg shadow">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold">Admin Panel</h2>
+        <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition">
+          Logout
+        </button>
+      </div>
+
       <!-- Form Tambah Barang -->
-      <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
+      <form id="formBarang" class="space-y-4">
         <div>
           <label class="block mb-1 font-medium">Nama Barang</label>
-          <input id="nama" name="nama" type="text" required class="w-full border p-2 rounded">
+          <input id="nama" type="text" required class="w-full border p-2 rounded">
         </div>
         <div>
           <label class="block mb-1 font-medium">Harga (Rp)</label>
-          <input id="harga" name="harga" type="number" required class="w-full border p-2 rounded">
+          <input id="harga" type="number" required class="w-full border p-2 rounded">
         </div>
         <div>
           <label class="block mb-1 font-medium">Satuan</label>
-          <input id="satuan" name="satuan" type="text" required class="w-full border p-2 rounded">
+          <input id="satuan" type="text" required class="w-full border p-2 rounded">
         </div>
         <div>
           <label class="block mb-1 font-medium">Gambar</label>
-          <input id="gambar" name="gambar" type="file" accept="image/*" required class="w-full border p-2 rounded">
-          <div id="imagePreviewContainer" class="mt-2 hidden">
-            <img id="imagePreview" class="image-preview">
-          </div>
+          <input id="gambar" type="file" accept="image/*" required class="w-full border p-2 rounded">
+          <img id="imagePreview" class="hidden mt-2 border rounded">
         </div>
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition w-full">
+        <button type="submit" class="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
           Tambah Barang
         </button>
       </form>
     </div>
 
     <!-- Katalog -->
-    <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
+    <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"></div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
-  <script src="script.js"></script>
+  <script src="/script.js"></script>
 </body>
 </html>`;
 
-const SCRIPT_JS = `"use strict";
-class BarangApp {
+const SCRIPT_JS = `class BarangApp {
   constructor() {
     this.isAdmin = false;
     this.cropper = null;
-    this.croppedImageBlob = null;
-    
+    this.croppedBlob = null;
+
     this.initElements();
     this.initEventListeners();
     this.checkAdminStatus();
@@ -323,41 +252,41 @@ class BarangApp {
   }
 
   initElements() {
-    this.form = document.getElementById('formBarang');
-    this.katalog = document.getElementById('katalog');
-    this.adminControls = document.getElementById('adminControls');
-    this.loginModal = document.getElementById('loginModal');
-    this.loginForm = document.getElementById('loginForm');
-    this.logoutBtn = document.getElementById('logoutBtn');
-    this.showLoginBtn = document.getElementById('showLoginBtn');
-    this.cancelLoginBtn = document.getElementById('cancelLoginBtn');
-    this.fileInput = document.getElementById('gambar');
-    this.imagePreview = document.getElementById('imagePreview');
-    this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
-    this.cropModal = document.getElementById('cropModal');
-    this.cropImage = document.getElementById('cropImage');
-    this.saveCropBtn = document.getElementById('saveCrop');
-    this.cancelCropBtn = document.getElementById('cancelCrop');
+    this.elements = {
+      form: document.getElementById('formBarang'),
+      katalog: document.getElementById('katalog'),
+      adminControls: document.getElementById('adminControls'),
+      loginModal: document.getElementById('loginModal'),
+      loginForm: document.getElementById('loginForm'),
+      logoutBtn: document.getElementById('logoutBtn'),
+      showLoginBtn: document.getElementById('showLoginBtn'),
+      cancelLoginBtn: document.getElementById('cancelLoginBtn'),
+      fileInput: document.getElementById('gambar'),
+      imagePreview: document.getElementById('imagePreview'),
+      cropModal: document.getElementById('cropModal'),
+      cropImage: document.getElementById('cropImage'),
+      saveCropBtn: document.getElementById('saveCrop'),
+      cancelCropBtn: document.getElementById('cancelCrop')
+    };
   }
 
   initEventListeners() {
-    this.form.addEventListener('submit', (e) => this.handleSubmit(e));
-    this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
-    this.logoutBtn.addEventListener('click', () => this.handleLogout());
-    this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
-    this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
-    this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
-    this.saveCropBtn.addEventListener('click', () => this.saveCrop());
-    this.cancelCropBtn.addEventListener('click', () => this.cancelCrop());
+    this.elements.form.addEventListener('submit', (e) => this.handleSubmit(e));
+    this.elements.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+    this.elements.logoutBtn.addEventListener('click', () => this.handleLogout());
+    this.elements.showLoginBtn.addEventListener('click', () => this.showLoginModal());
+    this.elements.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
+    this.elements.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+    this.elements.saveCropBtn.addEventListener('click', () => this.saveCrop());
+    this.elements.cancelCropBtn.addEventListener('click', () => this.cancelCrop());
   }
 
   showLoginModal() {
-    this.loginModal.classList.remove('hidden');
-    document.getElementById('loginUsername').focus();
+    this.elements.loginModal.classList.remove('hidden');
   }
 
   cancelLogin() {
-    this.loginModal.classList.add('hidden');
+    this.elements.loginModal.classList.add('hidden');
   }
 
   async checkAdminStatus() {
@@ -373,12 +302,12 @@ class BarangApp {
 
   toggleAdminUI() {
     if (this.isAdmin) {
-      this.adminControls.classList.remove('hidden');
-      this.showLoginBtn.classList.add('hidden');
+      this.elements.adminControls.classList.remove('hidden');
+      this.elements.showLoginBtn.classList.add('hidden');
     } else {
-      this.adminControls.classList.add('hidden');
-      this.loginModal.classList.add('hidden');
-      this.showLoginBtn.classList.remove('hidden');
+      this.elements.adminControls.classList.add('hidden');
+      this.elements.loginModal.classList.add('hidden');
+      this.elements.showLoginBtn.classList.remove('hidden');
     }
   }
 
@@ -397,7 +326,6 @@ class BarangApp {
       if (response.ok) {
         this.isAdmin = true;
         this.toggleAdminUI();
-        this.loginModal.classList.add('hidden');
         this.loadBarang();
       } else {
         alert('Login gagal! Periksa username dan password');
@@ -423,34 +351,31 @@ class BarangApp {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validasi tipe file
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
-      this.fileInput.value = '';
+      alert('Hanya format JPG, PNG, atau WebP yang didukung');
+      this.elements.fileInput.value = '';
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      this.cropImage.src = event.target.result;
-      this.cropModal.style.display = 'flex';
+      this.elements.cropImage.src = event.target.result;
+      this.elements.cropModal.style.display = 'flex';
       
-      // Inisialisasi Cropper.js
       if (this.cropper) {
         this.cropper.destroy();
       }
       
-      this.cropper = new Cropper(this.cropImage, {
-        aspectRatio: 1,  // Rasio 1:1 (persegi)
-        viewMode: 1,     // Mode view
-        autoCropArea: 1, // Area crop otomatis penuh
+      // Inisialisasi Cropper dengan pengaturan khusus
+      this.cropper = new Cropper(this.elements.cropImage, {
+        aspectRatio: 1,
+        viewMode: 1,
+        autoCropArea: 1,
         responsive: true,
-        guides: false,
-        center: false,
-        highlight: false,
-        cropBoxMovable: true,
-        cropBoxResizable: true,
+        dragMode: 'move',       // Hanya bisa geser gambar
+        cropBoxMovable: false,  // Kotak crop tidak bisa dipindah
+        cropBoxResizable: false, // Kotak crop tidak bisa diubah ukuran
         toggleDragModeOnDblclick: false
       });
     };
@@ -458,81 +383,59 @@ class BarangApp {
   }
 
   saveCrop() {
-    // Dapatkan canvas hasil crop
     const canvas = this.cropper.getCroppedCanvas({
       width: 500,
       height: 500,
-      minWidth: 256,
-      minHeight: 256,
-      maxWidth: 1024,
-      maxHeight: 1024,
       fillColor: '#fff',
-      imageSmoothingEnabled: true,
-      imageSmoothingQuality: 'high',
+      imageSmoothingQuality: 'high'
     });
 
-    // Konversi ke blob
     canvas.toBlob((blob) => {
-      this.croppedImageBlob = blob;
-      
-      // Tampilkan preview
+      this.croppedBlob = blob;
       const previewUrl = URL.createObjectURL(blob);
-      this.imagePreview.src = previewUrl;
-      this.imagePreviewContainer.classList.remove('hidden');
+      this.elements.imagePreview.src = previewUrl;
+      this.elements.imagePreview.classList.remove('hidden');
       
-      // Tutup modal crop
-      this.cropModal.style.display = 'none';
-      this.cropper.destroy();
-      this.cropper = null;
-      
-      // Update file input dengan file yang sudah di-crop
-      const fileName = this.fileInput.files[0].name;
-      const fileExt = fileName.split('.').pop().toLowerCase();
-      const newFileName = 'cropped.' + fileExt;
-      
-      const file = new File([blob], newFileName, { type: blob.type });
+      // Update file input dengan gambar yang sudah di-crop
+      const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
-      this.fileInput.files = dataTransfer.files;
-    }, 'image/jpeg', 0.9); // Kualitas 90%
+      this.elements.fileInput.files = dataTransfer.files;
+      
+      this.cancelCrop();
+    }, 'image/jpeg', 0.9);
   }
 
   cancelCrop() {
-    this.cropModal.style.display = 'none';
+    this.elements.cropModal.style.display = 'none';
     if (this.cropper) {
       this.cropper.destroy();
       this.cropper = null;
     }
-    this.fileInput.value = '';
   }
 
   async handleSubmit(e) {
     e.preventDefault();
-    const submitBtn = this.form.querySelector('button[type="submit"]');
-
+    const submitBtn = this.elements.form.querySelector('button[type="submit"]');
+    
     try {
       submitBtn.disabled = true;
       submitBtn.textContent = 'Memproses...';
 
       const formData = {
-        nama: this.form.nama.value.trim(),
-        harga: this.form.harga.value.trim(),
-        satuan: this.form.satuan.value.trim(),
-        gambar: this.form.gambar.files[0]
+        nama: this.elements.form.nama.value.trim(),
+        harga: this.elements.form.harga.value.trim(),
+        satuan: this.elements.form.satuan.value.trim(),
+        gambar: this.elements.fileInput.files[0]
       };
 
       if (!formData.nama || !formData.harga || !formData.satuan || !formData.gambar) {
-        throw new Error('Semua field harus diisi');
+        throw new Error('Harap isi semua field');
       }
 
-      // Convert image to base64
-      const base64 = await new Promise((resolve, reject) => {
+      const base64 = await new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = () => {
-          const base64Data = reader.result.split(',')[1] || reader.result;
-          resolve('data:image/jpeg;base64,' + base64Data);
-        };
-        reader.onerror = reject;
+        reader.onload = () => resolve(reader.result);
         reader.readAsDataURL(formData.gambar);
       });
 
@@ -547,13 +450,11 @@ class BarangApp {
         })
       });
 
-      if (!response.ok) {
-        throw new Error('Gagal menambahkan barang');
-      }
+      if (!response.ok) throw new Error('Gagal menambahkan barang');
 
       alert('Barang berhasil ditambahkan!');
-      this.form.reset();
-      this.imagePreviewContainer.classList.add('hidden');
+      this.elements.form.reset();
+      this.elements.imagePreview.classList.add('hidden');
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
@@ -566,48 +467,50 @@ class BarangApp {
 
   async loadBarang() {
     try {
-      this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
+      this.elements.katalog.innerHTML = '<div class="col-span-full text-center py-8"><p class="text-gray-500">Memuat data...</p></div>';
       
       const response = await fetch('/api/list');
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
       
-      if (items.length === 0) {
-        this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
+      if (!items.length) {
+        this.elements.katalog.innerHTML = '<div class="col-span-full text-center py-8"><p class="text-gray-500">Belum ada barang</p></div>';
         return;
       }
 
-      this.katalog.innerHTML = items.map(item => {
-        const escapedId = this.escapeHtml(item.id);
-        const escapedBase64 = this.escapeHtml(item.base64);
-        const escapedNama = this.escapeHtml(item.nama);
-        const escapedSatuan = this.escapeHtml(item.satuan);
-        const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
-        
-        return '<div class="bg-white p-3 rounded shadow" data-id="' + escapedId + '">' +
-          '<div class="aspect-square overflow-hidden">' +
-            '<img src="' + escapedBase64 + '" alt="' + escapedNama + '" class="w-full h-full object-cover">' +
-          '</div>' +
-          '<h2 class="text-lg font-semibold mt-2">' + escapedNama + '</h2>' +
-          '<p class="text-sm text-gray-600">Rp ' + hargaFormatted + ' / ' + escapedSatuan + '</p>' +
-          (this.isAdmin ? 
-            '<button onclick="app.hapusBarang(\\'' + escapedId + '\\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
-            : '') +
-        '</div>';
-      }).join('');
+      this.elements.katalog.innerHTML = items.map(item => `
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+          <div class="aspect-square bg-gray-100">
+            <img src="${item.base64}" alt="${this.escapeHtml(item.nama)}" class="w-full h-full object-cover">
+          </div>
+          <div class="p-4">
+            <h3 class="font-bold text-lg">${this.escapeHtml(item.nama)}</h3>
+            <p class="text-gray-600">Rp ${Number(item.harga).toLocaleString('id-ID')} / ${this.escapeHtml(item.satuan)}</p>
+            ${this.isAdmin ? `
+              <button onclick="app.hapusBarang('${item.id}')" 
+                class="mt-2 w-full bg-red-600 text-white py-1 rounded hover:bg-red-700 transition">
+                Hapus
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `).join('');
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = '<div class="text-center py-4 text-red-500"><p>Gagal memuat data: ' + this.escapeHtml(error.message) + '</p></div>';
+      this.elements.katalog.innerHTML = `
+        <div class="col-span-full text-center py-8 text-red-500">
+          <p>Gagal memuat data: ${this.escapeHtml(error.message)}</p>
+        </div>
+      `;
     }
   }
 
   async hapusBarang(id) {
+    if (!confirm('Yakin ingin menghapus barang ini?')) return;
+    
     try {
-      const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
-      if (!konfirmasi) return;
-
-      const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
+      const response = await fetch(`/api/hapus?id=${id}`, { method: 'POST' });
       if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
@@ -618,9 +521,8 @@ class BarangApp {
     }
   }
 
-  escapeHtml(unsafe) {
-    if (typeof unsafe !== 'string') return unsafe;
-    return unsafe
+  escapeHtml(text) {
+    return text.toString()
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -629,7 +531,5 @@ class BarangApp {
   }
 }
 
-// Initialize app
 const app = new BarangApp();
-window.app = app;
-`;
+window.app = app;`;
