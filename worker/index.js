@@ -278,21 +278,20 @@ class BarangApp {
       }
 
       this.katalog.innerHTML = items
-        .map(
-          (item) => `
-          <div class="bg-white p-3 rounded shadow" data-id="${item.id}">
-            <img src="${this.escapeHtml(item.base64)}" alt="${this.escapeHtml(item.nama)}" 
-                 class="w-full h-40 object-cover rounded mb-2" />
-            <h2 class="text-lg font-semibold">${this.escapeHtml(item.nama)}</h2>
-            <p class="text-sm text-gray-600">Rp ${Number(item.harga).toLocaleString('id-ID')} / ${this.escapeHtml(item.satuan)}</p>
-            <button onclick="app.hapusBarang('${item.id}')" 
-                    class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">
-              Hapus
-            </button>
-          </div>
-        `
-        )
-        .join('');
+  .map(
+    (item) => \`
+    <div class=\"bg-white p-3 rounded shadow\" data-id=\"\${item.id}\">
+      <img src=\"\${this.escapeHtml(item.base64)}\" alt=\"\${this.escapeHtml(item.nama)}\" 
+           class=\"w-full h-40 object-cover rounded mb-2\" />
+      <h2 class=\"text-lg font-semibold\">\${this.escapeHtml(item.nama)}</h2>
+      <p class=\"text-sm text-gray-600\">Rp \${Number(item.harga).toLocaleString('id-ID')} / \${this.escapeHtml(item.satuan)}</p>
+      <button onclick=\"app.hapusBarang('\${item.id}')\" 
+              class=\"mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition\">
+        Hapus
+      </button>
+    </div>
+  \`
+).join('');
     } catch (error) {
       console.error('Error:', error);
       this.katalog.innerHTML = `
