@@ -372,12 +372,24 @@ class BarangApp {
 
   async checkAdminStatus() {
     try {
-      const response = await fetch('/api/check-admin');
+      const response = await fetch('/api/check-admin', {
+        cache: 'no-store'
+      });
+      
+      if (!response.ok) throw new Error('Network response was not ok');
+      
       const { isAdmin } = await response.json();
       this.isAdmin = isAdmin;
       this.toggleAdminUI();
+      
+      if (typeof isAdmin !== 'boolean') {
+        this.isAdmin = false;
+        this.toggleAdminUI();
+      }
     } catch (error) {
       console.error('Error checking admin status:', error);
+      this.isAdmin = false;
+      this.toggleAdminUI();
     }
   }
 
@@ -420,7 +432,9 @@ class BarangApp {
 
   async handleLogout() {
     try {
-      await fetch('/api/logout');
+      await fetch('/api/logout', {
+        cache: 'no-store'
+      });
       this.isAdmin = false;
       this.toggleAdminUI();
       this.loadBarang();
@@ -446,6 +460,24 @@ class BarangApp {
       img.src = event.target.result;
       
       img.onload = () => {
+        // Atur ukuran modal berdasarkan ukuran gambar
+        const maxModalWidth = window.innerWidth * 0.9;
+        const maxModalHeight = window.innerHeight * 0.8;
+        let displayWidth = img.width;
+        let displayHeight = img.height;
+        
+        // Skala gambar agar muat di modal
+        if (img.width > maxModalWidth || img.height > maxModalHeight) {
+          const ratio = Math.min(
+            maxModalWidth / img.width,
+            maxModalHeight / img.height
+          );
+          displayWidth = img.width * ratio;
+          displayHeight = img.height * ratio;
+        }
+        
+        this.cropImage.style.width = `${displayWidth}px`;
+        this.cropImage.style.height = `${displayHeight}px`;
         this.cropImage.src = img.src;
         this.cropModal.style.display = 'flex';
         
@@ -453,25 +485,38 @@ class BarangApp {
           this.cropper.destroy();
         }
         
-        // Konfigurasi Cropper yang diubah
         this.cropper = new Cropper(this.cropImage, {
           aspectRatio: 1,
-          viewMode: 1,
+          viewMode: 3,
           autoCropArea: 0.8,
-          responsive: true,
-          movable: true, // Memungkinkan gambar digeser
-          zoomable: true, // Memungkinkan zoom gambar
-          zoomOnTouch: true, // Zoom dengan jari
-          zoomOnWheel: true, // Zoom dengan scroll
-          cropBoxMovable: false, // Kotak crop tidak bisa dipindahkan
-          cropBoxResizable: false, // Kotak crop tidak bisa diubah ukurannya
+          responsive: false,
+          restore: false,
+          movable: false,
+          zoomable: false,
+          zoomOnTouch: false,
+          zoomOnWheel: false,
+          cropBoxMovable: false,
+          cropBoxResizable: false,
+          toggleDragModeOnDblclick: false,
           ready: () => {
-            // Otomatis zoom in saat gambar siap
-            this.cropper.zoomTo(1.5); // Zoom in 1.5x
-            this.cropper.setCanvasData({
-              width: img.width,
-              height: img.height
+            const containerData = this.cropper.getContainerData();
+            const cropBoxSize = Math.min(containerData.width, containerData.height) * 0.8;
+            
+            this.cropper.setCropBoxData({
+              width: cropBoxSize,
+              height: cropBoxSize,
+              left: (containerData.width - cropBoxSize) / 2,
+              top: (containerData.height - cropBoxSize) / 2
             });
+            
+            // Atur zoom awal agar gambar terlihat penuh
+            const imageData = this.cropper.getImageData();
+            const scale = Math.min(
+              containerData.width / imageData.naturalWidth,
+              containerData.height / imageData.naturalHeight
+            );
+            
+            this.cropper.zoomTo(scale);
           }
         });
       };
@@ -604,7 +649,10 @@ class BarangApp {
     try {
       this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
       
-      const response = await fetch('/api/list');
+      const response = await fetch('/api/list', {
+        cache: 'no-store'
+      });
+      
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
@@ -628,7 +676,7 @@ class BarangApp {
           '<h2 class="text-lg font-semibold mt-2">' + escapedNama + '</h2>' +
           '<p class="text-sm text-gray-600">Rp ' + hargaFormatted + ' / ' + escapedSatuan + '</p>' +
           (this.isAdmin ? 
-            '<button onclick="app.hapusBarang(\\'' + escapedId + '\\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
+            '<button onclick="app.hapusBarang(\'' + escapedId + '\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
             : '') +
         '</div>';
       }).join('');
