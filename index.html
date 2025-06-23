@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Katalog Barang</title>
+  <script defer src="script.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="p-4 bg-gray-100">
+  <h1 class="text-xl font-bold mb-4">📦 Katalog Barang</h1>
+  <form id="formBarang" class="mb-6 space-y-2">
+    <input id="nama" placeholder="Nama Barang" required class="border p-2 w-full" />
+    <input id="harga" type="number" placeholder="Harga (Rp)" required class="border p-2 w-full" />
+    <input id="satuan" placeholder="Satuan" required class="border p-2 w-full" />
+    <input id="gambar" type="file" accept="image/*" required class="border p-2 w-full" />
+    <button type="submit" class="bg-blue-500 text-white px-4 py-2">Tambah</button>
+  </form>
+  <div id="katalog" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+</body>
+</html>
