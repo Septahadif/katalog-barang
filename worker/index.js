@@ -54,30 +54,18 @@ export default {
       });
     }
 
-    // Optimized GET list barang with caching
+    // GET list barang
     if (path === "/api/list") {
-      // Try to get from cache first
-      const cacheKey = `katalog:items`;
-      let data = await env.KATALOG.get(cacheKey, { cacheTtl: 60 }); // Cache for 60 seconds
-      
-      if (!data) {
-        // If not in cache, get from main storage
-        data = await env.KATALOG.get("items");
-        if (data) {
-          // Store in cache for future requests
-          ctx.waitUntil(env.KATALOG.put(cacheKey, data, { expirationTtl: 60 }));
-        }
-      }
-      
+      const data = await env.KATALOG.get("items");
       return new Response(data || "[]", {
         headers: { 
           "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=60" // Browser caching
+          "Cache-Control": "public, max-age=60"
         },
       });
     }
 
-    // POST tambah barang (admin only)
+    // POST tambah barang (hanya admin)
     if (path === "/api/tambah" && req.method === "POST") {
       const cookie = req.headers.get("Cookie") || "";
       if (!cookie.includes("admin=true")) {
@@ -89,42 +77,29 @@ export default {
 
       const item = { 
         ...body, 
-        id: Date.now().toString(),
-        base64: this.optimizeImage(body.base64) // Optimize image data
+        id: Date.now().toString() 
       };
       items.push(item);
 
-      // Update both main storage and cache in parallel
-      const jsonData = JSON.stringify(items);
-      await Promise.all([
-        env.KATALOG.put("items", jsonData),
-        env.KATALOG.put(`katalog:items`, jsonData, { expirationTtl: 60 })
-      ]);
-      
+      await env.KATALOG.put("items", JSON.stringify(items));
       return new Response(JSON.stringify({ success: true }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // POST hapus barang (admin only)
+    // POST hapus barang (hanya admin)
     if (path === "/api/hapus" && req.method === "POST") {
       const cookie = req.headers.get("Cookie") || "";
       if (!cookie.includes("admin=true")) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
       }
 
-      const id = url.searchParams.get("id");
+      const { id } = await req.json();
       if (!id) return new Response("Missing ID", { status: 400 });
 
       const items = JSON.parse(await env.KATALOG.get("items") || "[]");
       const updated = items.filter(item => item.id !== id);
-      const jsonData = JSON.stringify(updated);
-      
-      // Update both main storage and cache in parallel
-      await Promise.all([
-        env.KATALOG.put("items", jsonData),
-        env.KATALOG.put(`katalog:items`, jsonData, { expirationTtl: 60 })
-      ]);
+      await env.KATALOG.put("items", JSON.stringify(updated));
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { "Content-Type": "application/json" },
@@ -132,13 +107,6 @@ export default {
     }
 
     return new Response("404 Not Found", { status: 404 });
-  },
-  
-  // Image optimization helper
-  optimizeImage(base64) {
-    // In production, implement actual image optimization here
-    // For now, return the original image
-    return base64;
   }
 }
 
@@ -404,9 +372,7 @@ class BarangApp {
 
   async checkAdminStatus() {
     try {
-      const response = await fetch('/api/check-admin', {
-        cache: 'no-store' // Ensure fresh admin status
-      });
+      const response = await fetch('/api/check-admin');
       const { isAdmin } = await response.json();
       this.isAdmin = isAdmin;
       this.toggleAdminUI();
@@ -467,7 +433,6 @@ class BarangApp {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validasi tipe file
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
     if (!validTypes.includes(file.type)) {
       alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
@@ -488,12 +453,21 @@ class BarangApp {
           this.cropper.destroy();
         }
         
+        // Konfigurasi Cropper yang diubah
         this.cropper = new Cropper(this.cropImage, {
           aspectRatio: 1,
           viewMode: 1,
           autoCropArea: 0.8,
           responsive: true,
+          movable: true, // Memungkinkan gambar digeser
+          zoomable: true, // Memungkinkan zoom gambar
+          zoomOnTouch: true, // Zoom dengan jari
+          zoomOnWheel: true, // Zoom dengan scroll
+          cropBoxMovable: false, // Kotak crop tidak bisa dipindahkan
+          cropBoxResizable: false, // Kotak crop tidak bisa diubah ukurannya
           ready: () => {
+            // Otomatis zoom in saat gambar siap
+            this.cropper.zoomTo(1.5); // Zoom in 1.5x
             this.cropper.setCanvasData({
               width: img.width,
               height: img.height
@@ -630,10 +604,7 @@ class BarangApp {
     try {
       this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
       
-      const response = await fetch('/api/list', {
-        cache: 'force-cache' // Use cached version if available
-      });
-      
+      const response = await fetch('/api/list');
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
@@ -672,7 +643,12 @@ class BarangApp {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
+      const response = await fetch('/api/hapus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      
       if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
