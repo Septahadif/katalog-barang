@@ -126,7 +126,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       padding: 0.5rem 1rem;
       border-radius: 0.375rem;
       font-size: 0.875rem;
-      transform: scale(0.9);
     }
     
     /* Cropper Styles */
@@ -187,32 +186,26 @@ const INDEX_HTML = `<!DOCTYPE html>
       font-size: 1.2rem;
     }
     
-    /* Item Styles */
-    .item-card {
+    /* Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-content {
       background: white;
       border-radius: 0.5rem;
-      overflow: hidden;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      transition: transform 0.2s;
-    }
-    .item-card:hover {
-      transform: translateY(-2px);
-    }
-    .item-image {
-      width: 100%;
-      aspect-ratio: 1/1;
-      object-fit: cover;
-    }
-    .item-info {
-      padding: 1rem;
-    }
-    .item-name {
-      font-weight: 600;
-      margin-bottom: 0.25rem;
-    }
-    .item-price {
-      color: #4b5563;
-      font-size: 0.875rem;
+      width: 90%;
+      max-width: 400px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     
     /* Loading Indicator */
@@ -229,33 +222,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       z-index: 1000;
       text-align: center;
     }
-    .loading-spinner {
-      width: 50px;
-      height: 50px;
-      margin: 0 auto 1rem;
-    }
-    
-    /* Modal Styles */
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-    .modal-content {
-      background: white;
-      border-radius: 0.5rem;
-      width: 90%;
-      max-width: 400px;
-      padding: 1.5rem;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen p-4">
@@ -268,7 +234,7 @@ const INDEX_HTML = `<!DOCTYPE html>
     </div>
     
     <!-- Admin Login Modal -->
-    <div id="loginModal" class="modal-overlay hidden">
+    <div id="loginModal" class="modal-overlay">
       <div class="modal-content">
         <h2 class="text-xl font-bold mb-4">Login Admin</h2>
         <form id="loginForm" class="space-y-4">
@@ -331,7 +297,7 @@ const INDEX_HTML = `<!DOCTYPE html>
               <button class="zoom-btn" id="zoomIn">+</button>
               <button class="zoom-btn" id="zoomOut">-</button>
             </div>
-            <img id="cropperPreview" class="cropper-preview">
+            <img id="cropperPreview">
             <div class="cropper-overlay">
               <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
               <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
@@ -358,8 +324,8 @@ const INDEX_HTML = `<!DOCTYPE html>
   </div>
 
   <!-- Loading Indicator -->
-  <div id="loading" class="loading hidden">
-    <img src="https://i.gifer.com/ZZ5H.gif" alt="Loading" class="loading-spinner">
+  <div id="loading" class="loading">
+    <img src="https://i.gifer.com/ZZ5H.gif" alt="Loading" width="50">
     <p>Menyimpan barang...</p>
   </div>
 
@@ -401,25 +367,26 @@ class BarangApp {
   }
 
   initEventListeners() {
-    this.form.addEventListener('submit', (e) => this.handleSubmit(e));
+    // Login modal handlers
+    this.showLoginBtn.addEventListener('click', () => {
+      this.loginModal.style.display = 'flex';
+    });
+    
+    this.cancelLoginBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.loginModal.style.display = 'none';
+    });
+    
     this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+    
+    // Other form handlers
+    this.form.addEventListener('submit', (e) => this.handleSubmit(e));
     this.logoutBtn.addEventListener('click', () => this.handleLogout());
-    this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
-    this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
     this.cropConfirm.addEventListener('click', () => this.applyCrop());
     this.cropCancel.addEventListener('click', () => this.cancelCrop());
     this.zoomInBtn.addEventListener('click', () => this.zoom(1.2));
     this.zoomOutBtn.addEventListener('click', () => this.zoom(0.8));
-  }
-
-  showLoginModal() {
-    this.loginModal.classList.remove('hidden');
-    document.getElementById('loginUsername').focus();
-  }
-
-  cancelLogin() {
-    this.loginModal.classList.add('hidden');
   }
 
   async checkAdminStatus() {
@@ -439,7 +406,7 @@ class BarangApp {
       this.showLoginBtn.classList.add('hidden');
     } else {
       this.adminControls.classList.add('hidden');
-      this.loginModal.classList.add('hidden');
+      this.loginModal.style.display = 'none';
       this.showLoginBtn.classList.remove('hidden');
     }
   }
@@ -459,7 +426,7 @@ class BarangApp {
       if (response.ok) {
         this.isAdmin = true;
         this.toggleAdminUI();
-        this.loginModal.classList.add('hidden');
+        this.loginModal.style.display = 'none';
         this.loadBarang();
       } else {
         alert('Login gagal! Periksa username dan password');
@@ -532,12 +499,12 @@ class BarangApp {
   applyCrop() {
     if (!this.cropper) return;
     
-    // Dapatkan canvas yang sudah di-crop
+    // Dapatkan canvas yang sudah di-crop dengan kualitas HD
     const canvas = this.cropper.getCroppedCanvas({
-      width: 800,
-      height: 800,
-      minWidth: 400,
-      minHeight: 400,
+      width: 1200,
+      height: 1200,
+      minWidth: 800,
+      minHeight: 800,
       maxWidth: 2000,
       maxHeight: 2000,
       fillColor: '#fff',
@@ -545,7 +512,7 @@ class BarangApp {
       imageSmoothingQuality: 'high'
     });
     
-    // Konversi ke blob
+    // Konversi ke blob dengan kualitas tinggi
     canvas.toBlob((blob) => {
       this.cropImageBlob = blob;
       
@@ -558,7 +525,7 @@ class BarangApp {
       this.form.querySelector('#gambar').after(preview);
       
       this.cancelCrop();
-    }, 'image/jpeg', 0.92);
+    }, 'image/jpeg', 0.95); // Kualitas 95% untuk hasil terbaik
   }
 
   cancelCrop() {
@@ -589,7 +556,7 @@ class BarangApp {
         throw new Error('Semua field harus diisi');
       }
 
-      // Convert image to base64
+      // Convert image to base64 dengan kualitas tinggi
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
@@ -648,17 +615,15 @@ class BarangApp {
         const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
         
         return \`
-          <div class="item-card" data-id="\${escapedId}">
-            <img src="\${escapedBase64}" alt="\${escapedNama}" class="item-image">
-            <div class="item-info">
-              <h3 class="item-name">\${escapedNama}</h3>
-              <p class="item-price">Rp \${hargaFormatted} / \${escapedSatuan}</p>
+          <div class="bg-white rounded-lg shadow overflow-hidden">
+            <img src="\${escapedBase64}" alt="\${escapedNama}" class="w-full h-48 object-cover">
+            <div class="p-4">
+              <h3 class="font-bold text-lg">\${escapedNama}</h3>
+              <p class="text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
               \${this.isAdmin ? 
-                \`<div class="flex gap-2 mt-3">
-                  <button onclick="app.hapusBarang('\${escapedId}')" class="btn-delete px-3 py-1 text-sm rounded">
-                    Hapus
-                  </button>
-                </div>\` : ''}
+                \`<button onclick="app.hapusBarang('\${escapedId}')" class="mt-3 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700">
+                  Hapus
+                </button>\` : ''}
             </div>
           </div>
         \`;
