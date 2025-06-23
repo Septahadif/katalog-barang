@@ -109,22 +109,52 @@ const INDEX_HTML = `<!DOCTYPE html>
   <title>Katalog Barang</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <style>
-    .cropper-container { width: 100%; height: 300px; position: relative; overflow: hidden; }
-    .cropper-preview { width: 100%; height: 100%; object-fit: cover; position: absolute; }
-    .cropper-overlay { 
-      position: absolute; 
-      top: 0; 
-      left: 0; 
+    .cropper-container { 
       width: 100%; 
-      height: 100%; 
+      height: 300px; 
+      position: relative; 
+      overflow: hidden;
+      border: 2px dashed #ccc;
+      background-color: #f5f5f5;
+      margin-top: 10px;
+    }
+    .cropper-preview { 
+      position: absolute;
+      max-width: none;
+      cursor: move;
+    }
+    .cropper-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
       grid-template-rows: 1fr 1fr 1fr;
       pointer-events: none;
     }
-    .cropper-grid-cell { border: 1px dashed rgba(255,255,255,0.5); }
-    .cropper-controls { position: absolute; bottom: 10px; width: 100%; text-align: center; }
+    .cropper-grid-cell { 
+      border: 1px dashed rgba(0,0,0,0.3);
+    }
+    .cropper-controls { 
+      position: absolute; 
+      bottom: 10px; 
+      width: 100%; 
+      text-align: center;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
     .aspect-square { aspect-ratio: 1/1; }
+    .login-modal-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    #adminControls {
+      transition: all 0.3s ease;
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -149,14 +179,23 @@ const INDEX_HTML = `<!DOCTYPE html>
             <label class="block mb-1">Password</label>
             <input type="password" id="loginPassword" class="w-full border p-2 rounded" required>
           </div>
-          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded w-full">Login</button>
+          <div class="login-modal-buttons">
+            <button type="button" id="cancelLoginBtn" class="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
+              Batal
+            </button>
+            <button type="submit" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+              Login
+            </button>
+          </div>
         </form>
       </div>
     </div>
 
     <!-- Admin Controls -->
     <div id="adminControls" class="hidden mb-6">
-      <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4">Logout</button>
+      <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
+        Logout
+      </button>
       
       <!-- Form Tambah Barang -->
       <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
@@ -185,12 +224,18 @@ const INDEX_HTML = `<!DOCTYPE html>
               <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
             </div>
             <div class="cropper-controls">
-              <button type="button" id="cropCancel" class="bg-gray-500 text-white px-3 py-1 rounded mr-2">Batal</button>
-              <button type="button" id="cropConfirm" class="bg-blue-600 text-white px-3 py-1 rounded">Simpan</button>
+              <button type="button" id="cropCancel" class="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 transition">
+                Batal
+              </button>
+              <button type="button" id="cropConfirm" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition">
+                Simpan
+              </button>
             </div>
           </div>
         </div>
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition w-full">Tambah Barang</button>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition w-full">
+          Tambah Barang
+        </button>
       </form>
     </div>
 
@@ -212,7 +257,11 @@ class BarangApp {
       startY: 0,
       offsetX: 0,
       offsetY: 0,
-      isDragging: false
+      isDragging: false,
+      naturalWidth: 0,
+      naturalHeight: 0,
+      previewWidth: 0,
+      previewHeight: 0
     };
     
     this.initElements();
@@ -229,6 +278,7 @@ class BarangApp {
     this.loginForm = document.getElementById('loginForm');
     this.logoutBtn = document.getElementById('logoutBtn');
     this.showLoginBtn = document.getElementById('showLoginBtn');
+    this.cancelLoginBtn = document.getElementById('cancelLoginBtn');
     this.cropperContainer = document.getElementById('cropperContainer');
     this.cropperPreview = document.getElementById('cropperPreview');
     this.cropConfirm = document.getElementById('cropConfirm');
@@ -241,6 +291,7 @@ class BarangApp {
     this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
     this.logoutBtn.addEventListener('click', () => this.handleLogout());
     this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
+    this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
     this.cropConfirm.addEventListener('click', () => this.applyCrop());
     this.cropCancel.addEventListener('click', () => this.cancelCrop());
@@ -249,10 +300,18 @@ class BarangApp {
     this.cropperPreview.addEventListener('mousedown', (e) => this.startDrag(e));
     document.addEventListener('mousemove', (e) => this.drag(e));
     document.addEventListener('mouseup', () => this.endDrag());
+    this.cropperPreview.addEventListener('touchstart', (e) => this.startDrag(e.touches[0]));
+    document.addEventListener('touchmove', (e) => this.drag(e.touches[0]));
+    document.addEventListener('touchend', () => this.endDrag());
   }
 
   showLoginModal() {
     this.loginModal.classList.remove('hidden');
+    document.getElementById('loginUsername').focus();
+  }
+
+  cancelLogin() {
+    this.loginModal.classList.add('hidden');
   }
 
   async checkAdminStatus() {
@@ -322,55 +381,107 @@ class BarangApp {
     reader.onload = (event) => {
       this.cropperPreview.src = event.target.result;
       this.cropperContainer.classList.remove('hidden');
+      
       this.cropper.image = new Image();
+      this.cropper.image.onload = () => {
+        this.cropper.naturalWidth = this.cropper.image.naturalWidth;
+        this.cropper.naturalHeight = this.cropper.image.naturalHeight;
+        
+        // Calculate initial dimensions to fit container
+        const containerWidth = this.cropperContainer.offsetWidth;
+        const containerHeight = this.cropperContainer.offsetHeight;
+        
+        const ratio = Math.min(
+          containerWidth / this.cropper.naturalWidth,
+          containerHeight / this.cropper.naturalHeight
+        );
+        
+        this.cropper.previewWidth = this.cropper.naturalWidth * ratio;
+        this.cropper.previewHeight = this.cropper.naturalHeight * ratio;
+        
+        this.cropperPreview.style.width = this.cropper.previewWidth + 'px';
+        this.cropperPreview.style.height = this.cropper.previewHeight + 'px';
+        
+        // Center the image initially
+        this.centerImage();
+      };
       this.cropper.image.src = event.target.result;
-      this.cropperPreview.style.left = '0px';
-      this.cropperPreview.style.top = '0px';
     };
     reader.readAsDataURL(file);
   }
 
+  centerImage() {
+    const containerWidth = this.cropperContainer.offsetWidth;
+    const containerHeight = this.cropperContainer.offsetHeight;
+    
+    this.cropper.offsetX = (containerWidth - this.cropper.previewWidth) / 2;
+    this.cropper.offsetY = (containerHeight - this.cropper.previewHeight) / 2;
+    
+    this.cropperPreview.style.left = this.cropper.offsetX + 'px';
+    this.cropperPreview.style.top = this.cropper.offsetY + 'px';
+  }
+
   startDrag(e) {
+    e.preventDefault();
     this.cropper.isDragging = true;
     this.cropper.startX = e.clientX;
     this.cropper.startY = e.clientY;
-    this.cropper.offsetX = parseInt(this.cropperPreview.style.left) || 0;
-    this.cropper.offsetY = parseInt(this.cropperPreview.style.top) || 0;
+    this.cropper.offsetX = parseFloat(this.cropperPreview.style.left) || 0;
+    this.cropper.offsetY = parseFloat(this.cropperPreview.style.top) || 0;
   }
 
   drag(e) {
     if (!this.cropper.isDragging) return;
+    e.preventDefault();
     
     const dx = e.clientX - this.cropper.startX;
     const dy = e.clientY - this.cropper.startY;
     
-    this.cropperPreview.style.left = (this.cropper.offsetX + dx) + 'px';
-    this.cropperPreview.style.top = (this.cropper.offsetY + dy) + 'px';
+    const newX = this.cropper.offsetX + dx;
+    const newY = this.cropper.offsetY + dy;
+    
+    // Apply boundaries to prevent dragging outside container
+    const maxX = this.cropperContainer.offsetWidth - this.cropper.previewWidth;
+    const maxY = this.cropperContainer.offsetHeight - this.cropper.previewHeight;
+    
+    const boundedX = Math.max(0, Math.min(maxX, newX));
+    const boundedY = Math.max(0, Math.min(maxY, newY));
+    
+    this.cropperPreview.style.left = boundedX + 'px';
+    this.cropperPreview.style.top = boundedY + 'px';
   }
 
   endDrag() {
     this.cropper.isDragging = false;
+    // Update current position after drag ends
+    this.cropper.offsetX = parseFloat(this.cropperPreview.style.left);
+    this.cropper.offsetY = parseFloat(this.cropperPreview.style.top);
   }
 
   applyCrop() {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const containerRect = this.cropperContainer.getBoundingClientRect();
-    const imgRect = this.cropperPreview.getBoundingClientRect();
     
     // Set canvas to square size (1:1 ratio)
-    const size = Math.min(containerRect.width, containerRect.height);
+    const size = Math.min(
+      this.cropperContainer.offsetWidth, 
+      this.cropperContainer.offsetHeight
+    );
     canvas.width = size;
     canvas.height = size;
     
-    // Calculate crop area
-    const scaleX = this.cropper.image.naturalWidth / imgRect.width;
-    const scaleY = this.cropper.image.naturalHeight / imgRect.height;
+    // Calculate scale factors
+    const scaleX = this.cropper.naturalWidth / this.cropper.previewWidth;
+    const scaleY = this.cropper.naturalHeight / this.cropper.previewHeight;
     
-    const sx = (imgRect.left - containerRect.left) * -1 * scaleX;
-    const sy = (imgRect.top - containerRect.top) * -1 * scaleY;
-    const sWidth = containerRect.width * scaleX;
-    const sHeight = containerRect.height * scaleY;
+    // Calculate source coordinates
+    const previewLeft = parseFloat(this.cropperPreview.style.left);
+    const previewTop = parseFloat(this.cropperPreview.style.top);
+    
+    const sx = -previewLeft * scaleX;
+    const sy = -previewTop * scaleY;
+    const sWidth = this.cropperContainer.offsetWidth * scaleX;
+    const sHeight = this.cropperContainer.offsetHeight * scaleY;
     
     // Draw cropped image (1:1 ratio)
     ctx.drawImage(
@@ -391,6 +502,7 @@ class BarangApp {
 
   cancelCrop() {
     this.cropperContainer.classList.add('hidden');
+    this.fileInput.value = '';
     this.cropperPreview.style.left = '0';
     this.cropperPreview.style.top = '0';
   }
@@ -517,4 +629,3 @@ class BarangApp {
 // Initialize app
 const app = new BarangApp();
 window.app = app;
-`;
