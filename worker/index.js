@@ -3,28 +3,26 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Serve HTML
+    // Serve static assets
     if (path === "/" || path === "/index.html") {
       return new Response(INDEX_HTML, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
 
-    // Serve JS
     if (path === "/script.js") {
       return new Response(SCRIPT_JS, {
         headers: { "Content-Type": "application/javascript; charset=utf-8" },
       });
     }
 
-    // Serve Cropper CSS
     if (path === "/cropper.css") {
       return new Response(CROPPER_CSS, {
         headers: { "Content-Type": "text/css" },
       });
     }
 
-    // Login Admin
+    // API endpoints
     if (path === "/api/login" && req.method === "POST") {
       const { username, password } = await req.json();
       const isAdmin = username === "septa" && password === "septa2n2n";
@@ -40,7 +38,6 @@ export default {
       return new Response(JSON.stringify({ success: false }), { status: 401 });
     }
 
-    // Check Admin Status
     if (path === "/api/check-admin") {
       const cookie = req.headers.get("Cookie") || "";
       return new Response(JSON.stringify({ isAdmin: cookie.includes("admin=true") }), {
@@ -48,7 +45,6 @@ export default {
       });
     }
 
-    // Logout
     if (path === "/api/logout") {
       return new Response(JSON.stringify({ success: true }), {
         headers: { 
@@ -58,15 +54,30 @@ export default {
       });
     }
 
-    // GET list barang
+    // Optimized GET list barang with caching
     if (path === "/api/list") {
-      const data = await env.KATALOG.get("items");
+      // Try to get from cache first
+      const cacheKey = `katalog:items`;
+      let data = await env.KATALOG.get(cacheKey, { cacheTtl: 60 }); // Cache for 60 seconds
+      
+      if (!data) {
+        // If not in cache, get from main storage
+        data = await env.KATALOG.get("items");
+        if (data) {
+          // Store in cache for future requests
+          ctx.waitUntil(env.KATALOG.put(cacheKey, data, { expirationTtl: 60 }));
+        }
+      }
+      
       return new Response(data || "[]", {
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=60" // Browser caching
+        },
       });
     }
 
-    // POST tambah barang (hanya admin)
+    // POST tambah barang (admin only)
     if (path === "/api/tambah" && req.method === "POST") {
       const cookie = req.headers.get("Cookie") || "";
       if (!cookie.includes("admin=true")) {
@@ -76,16 +87,26 @@ export default {
       const body = await req.json();
       const items = JSON.parse(await env.KATALOG.get("items") || "[]");
 
-      const item = { ...body, id: Date.now().toString() };
+      const item = { 
+        ...body, 
+        id: Date.now().toString(),
+        base64: this.optimizeImage(body.base64) // Optimize image data
+      };
       items.push(item);
 
-      await env.KATALOG.put("items", JSON.stringify(items));
+      // Update both main storage and cache in parallel
+      const jsonData = JSON.stringify(items);
+      await Promise.all([
+        env.KATALOG.put("items", jsonData),
+        env.KATALOG.put(`katalog:items`, jsonData, { expirationTtl: 60 })
+      ]);
+      
       return new Response(JSON.stringify({ success: true }), {
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    // POST hapus barang (hanya admin)
+    // POST hapus barang (admin only)
     if (path === "/api/hapus" && req.method === "POST") {
       const cookie = req.headers.get("Cookie") || "";
       if (!cookie.includes("admin=true")) {
@@ -97,7 +118,13 @@ export default {
 
       const items = JSON.parse(await env.KATALOG.get("items") || "[]");
       const updated = items.filter(item => item.id !== id);
-      await env.KATALOG.put("items", JSON.stringify(updated));
+      const jsonData = JSON.stringify(updated);
+      
+      // Update both main storage and cache in parallel
+      await Promise.all([
+        env.KATALOG.put("items", jsonData),
+        env.KATALOG.put(`katalog:items`, jsonData, { expirationTtl: 60 })
+      ]);
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { "Content-Type": "application/json" },
@@ -105,6 +132,13 @@ export default {
     }
 
     return new Response("404 Not Found", { status: 404 });
+  },
+  
+  // Image optimization helper
+  optimizeImage(base64) {
+    // In production, implement actual image optimization here
+    // For now, return the original image
+    return base64;
   }
 }
 
@@ -316,6 +350,7 @@ const INDEX_HTML = `<!DOCTYPE html>
   <script src="script.js"></script>
 </body>
 </html>`;
+
 const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
@@ -369,7 +404,9 @@ class BarangApp {
 
   async checkAdminStatus() {
     try {
-      const response = await fetch('/api/check-admin');
+      const response = await fetch('/api/check-admin', {
+        cache: 'no-store' // Ensure fresh admin status
+      });
       const { isAdmin } = await response.json();
       this.isAdmin = isAdmin;
       this.toggleAdminUI();
@@ -440,7 +477,6 @@ class BarangApp {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      // Buat gambar baru untuk memastikan load sempurna
       const img = new Image();
       img.src = event.target.result;
       
@@ -448,28 +484,16 @@ class BarangApp {
         this.cropImage.src = img.src;
         this.cropModal.style.display = 'flex';
         
-        // Hancurkan cropper lama jika ada
         if (this.cropper) {
           this.cropper.destroy();
         }
         
-        // Inisialisasi Cropper.js dengan pengaturan baru
         this.cropper = new Cropper(this.cropImage, {
           aspectRatio: 1,
           viewMode: 1,
           autoCropArea: 0.8,
           responsive: true,
-          guides: false,
-          center: false,
-          highlight: false,
-          cropBoxMovable: false,
-          cropBoxResizable: false,
-          dragMode: 'move',
-          toggleDragModeOnDblclick: false,
-          background: true,
-          modal: false,
           ready: () => {
-            // Pastikan gambar terlihat dengan jelas
             this.cropper.setCanvasData({
               width: img.width,
               height: img.height
@@ -498,7 +522,6 @@ class BarangApp {
       return;
     }
 
-    // Dapatkan canvas hasil crop dengan kualitas tinggi
     const canvas = this.cropper.getCroppedCanvas({
       width: 800,
       height: 800,
@@ -507,11 +530,9 @@ class BarangApp {
       maxWidth: 1200,
       maxHeight: 1200,
       fillColor: '#fff',
-      imageSmoothingEnabled: true,
       imageSmoothingQuality: 'high',
     });
 
-    // Konversi ke blob dengan kualitas tinggi
     canvas.toBlob((blob) => {
       if (!blob) {
         alert('Gagal melakukan crop gambar');
@@ -520,17 +541,14 @@ class BarangApp {
 
       this.croppedImageBlob = blob;
       
-      // Tampilkan preview
       const previewUrl = URL.createObjectURL(blob);
       this.imagePreview.src = previewUrl;
       this.imagePreviewContainer.classList.remove('hidden');
       
-      // Tutup modal crop
       this.cropModal.style.display = 'none';
       this.cropper.destroy();
       this.cropper = null;
       
-      // Update file input dengan file yang sudah di-crop
       const fileName = this.fileInput.files[0].name;
       const fileExt = fileName.split('.').pop().toLowerCase();
       const newFileName = 'cropped.' + fileExt;
@@ -539,7 +557,7 @@ class BarangApp {
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       this.fileInput.files = dataTransfer.files;
-    }, 'image/jpeg', 0.95); // Kualitas 95%
+    }, 'image/jpeg', 0.95);
   }
 
   cancelCrop() {
@@ -570,7 +588,6 @@ class BarangApp {
         throw new Error('Semua field harus diisi');
       }
 
-      // Convert image to base64
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -613,7 +630,10 @@ class BarangApp {
     try {
       this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
       
-      const response = await fetch('/api/list');
+      const response = await fetch('/api/list', {
+        cache: 'force-cache' // Use cached version if available
+      });
+      
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
@@ -632,7 +652,7 @@ class BarangApp {
         
         return '<div class="bg-white p-3 rounded shadow" data-id="' + escapedId + '">' +
           '<div class="aspect-square overflow-hidden">' +
-            '<img src="' + escapedBase64 + '" alt="' + escapedNama + '" class="w-full h-full object-cover">' +
+            '<img src="' + escapedBase64 + '" alt="' + escapedNama + '" class="w-full h-full object-cover" loading="lazy">' +
           '</div>' +
           '<h2 class="text-lg font-semibold mt-2">' + escapedNama + '</h2>' +
           '<p class="text-sm text-gray-600">Rp ' + hargaFormatted + ' / ' + escapedSatuan + '</p>' +
