@@ -24,6 +24,30 @@ export default {
       });
     }
 
+    // Serve Image
+    if (path.startsWith("/api/image/")) {
+      const id = path.split('/')[3];
+      if (!id) return new Response("Missing ID", { status: 400 });
+
+      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+      const item = items.find(item => item.id === id);
+      
+      if (!item || !item.base64) {
+        return new Response("Image not found", { status: 404 });
+      }
+
+      // Extract image data from base64
+      const base64Data = item.base64.split(',')[1] || item.base64;
+      const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      
+      return new Response(imageBuffer, {
+        headers: { 
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "public, max-age=86400" // Cache for 1 day
+        }
+      });
+    }
+
     // Login Admin
     if (path === "/api/login" && req.method === "POST") {
       const { username, password } = await req.json();
@@ -76,7 +100,11 @@ export default {
       const body = await req.json();
       const items = JSON.parse(await env.KATALOG.get("items") || "[]");
 
-      const item = { ...body, id: Date.now().toString() };
+      const item = { 
+        ...body, 
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString()
+      };
       items.push(item);
 
       await env.KATALOG.put("items", JSON.stringify(items));
@@ -221,6 +249,20 @@ const INDEX_HTML = `<!DOCTYPE html>
       justify-content: center;
       gap: 10px;
     }
+
+    /* Loading spinner */
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(0,0,0,.1);
+      border-radius: 50%;
+      border-top-color: #4b5563;
+      animation: spin 1s ease-in-out infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -316,6 +358,7 @@ const INDEX_HTML = `<!DOCTYPE html>
   <script src="script.js"></script>
 </body>
 </html>`;
+
 const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
@@ -623,27 +666,57 @@ class BarangApp {
         return;
       }
 
+      // Render item list without images first
       this.katalog.innerHTML = items.map(item => {
         const escapedId = this.escapeHtml(item.id);
-        const escapedBase64 = this.escapeHtml(item.base64);
         const escapedNama = this.escapeHtml(item.nama);
         const escapedSatuan = this.escapeHtml(item.satuan);
         const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
         
-        return '<div class="bg-white p-3 rounded shadow" data-id="' + escapedId + '">' +
-          '<div class="aspect-square overflow-hidden">' +
-            '<img src="' + escapedBase64 + '" alt="' + escapedNama + '" class="w-full h-full object-cover">' +
-          '</div>' +
-          '<h2 class="text-lg font-semibold mt-2">' + escapedNama + '</h2>' +
-          '<p class="text-sm text-gray-600">Rp ' + hargaFormatted + ' / ' + escapedSatuan + '</p>' +
-          (this.isAdmin ? 
-            '<button onclick="app.hapusBarang(\\'' + escapedId + '\\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
-            : '') +
-        '</div>';
+        return \`<div class="bg-white p-3 rounded shadow" data-id="\${escapedId}">
+          <div class="aspect-square overflow-hidden bg-gray-100 flex items-center justify-center">
+            <div class="loading-spinner"></div>
+          </div>
+          <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
+          <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
+          \${this.isAdmin ? 
+            \`<button onclick="app.hapusBarang('\${escapedId}')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>\` 
+            : ''}
+        </div>\`;
       }).join('');
+
+      // Load images for each item
+      items.forEach(item => {
+        this.loadItemImage(item.id);
+      });
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = '<div class="text-center py-4 text-red-500"><p>Gagal memuat data: ' + this.escapeHtml(error.message) + '</p></div>';
+      this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
+    }
+  }
+
+  async loadItemImage(id) {
+    try {
+      const imgElement = document.querySelector(\`[data-id="\${id}"] img\`);
+      if (!imgElement) return;
+
+      const response = await fetch(\`/api/image/\${id}\`);
+      if (!response.ok) throw new Error('Gagal memuat gambar');
+      
+      const blob = await response.blob();
+      const imageUrl = URL.createObjectURL(blob);
+      
+      // Replace loading spinner with actual image
+      const container = document.querySelector(\`[data-id="\${id}"] div\`);
+      if (container) {
+        container.innerHTML = \`<img src="\${imageUrl}" alt="Barang \${id}" class="w-full h-full object-cover" loading="lazy">\`;
+      }
+    } catch (error) {
+      console.error(\`Error loading image for item \${id}:\`, error);
+      const container = document.querySelector(\`[data-id="\${id}"] div\`);
+      if (container) {
+        container.innerHTML = '<p class="text-gray-500 text-sm">Gambar tidak tersedia</p>';
+      }
     }
   }
 
