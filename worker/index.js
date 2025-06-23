@@ -54,78 +54,273 @@ const INDEX_HTML = `<!DOCTYPE html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Katalog Barang</title>
-  <script defer src="script.js"></script>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
 </head>
-<body class="p-4 bg-gray-100">
-  <h1 class="text-xl font-bold mb-4">📦 Katalog Barang</h1>
-  <form id="formBarang" class="mb-6 space-y-2">
-    <input id="nama" placeholder="Nama Barang" required class="border p-2 w-full" />
-    <input id="harga" type="number" placeholder="Harga (Rp)" required class="border p-2 w-full" />
-    <input id="satuan" placeholder="Satuan" required class="border p-2 w-full" />
-    <input id="gambar" type="file" accept="image/*" required class="border p-2 w-full" />
-    <button type="submit" class="bg-blue-500 text-white px-4 py-2">Tambah</button>
-  </form>
-  <div id="katalog" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+
+  <div class="w-full max-w-xl">
+    <h1 class="text-2xl font-bold mb-4 text-center">📦 Katalog Barang</h1>
+
+    <!-- Form Tambah Barang -->
+    <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
+      <div>
+        <label class="block mb-1 font-medium">Nama Barang</label>
+        <input id="nama" name="nama" type="text" required class="w-full border p-2 rounded" placeholder="Contoh: Gula Pasir" />
+      </div>
+      <div>
+        <label class="block mb-1 font-medium">Harga (Rp)</label>
+        <input id="harga" name="harga" type="number" required class="w-full border p-2 rounded" placeholder="Contoh: 15000" />
+      </div>
+      <div>
+        <label class="block mb-1 font-medium">Satuan</label>
+        <input id="satuan" name="satuan" type="text" required class="w-full border p-2 rounded" placeholder="Contoh: Kg / Liter" />
+      </div>
+      <div>
+        <label class="block mb-1 font-medium">Gambar</label>
+        <input id="gambar" name="gambar" type="file" accept="image/*" required class="w-full border p-2 rounded" />
+      </div>
+      <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition w-full">Tambah Barang</button>
+    </form>
+
+    <!-- Katalog -->
+    <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
+  </div>
+
+  <!-- Script -->
+  <script src="script.js"></script>
 </body>
 </html>
-`;
+;
 
 const SCRIPT_JS = `
-async function compressImage(file, maxWidth=800) {
-  return new Promise(resolve => {
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = e => img.src = e.target.result;
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      const scale = maxWidth / img.width;
-      canvas.width = maxWidth;
-      canvas.height = img.height * scale;
-      canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
-      canvas.toBlob(resolve, "image/jpeg", 0.8);
-    };
-    reader.readAsDataURL(file);
-  });
+// ================ UTILITY FUNCTIONS ================
+const Utils = {
+  // Kompres gambar dengan kualitas dan dimensi maksimum
+  async compressImage(file, maxWidth = 800, quality = 0.8) {
+    if (!file.type.match('image.*')) {
+      throw new Error('File harus berupa gambar');
+    }
+
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+
+      reader.onerror = () => reject(new Error('Gagal membaca file'));
+      img.onerror = () => reject(new Error('Gagal memuat gambar'));
+
+      reader.onload = (e) => (img.src = e.target.result);
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const scale = Math.min(maxWidth / img.width, 1);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return reject(new Error('Kompresi gagal'));
+              if (blob.size > 2 * 1024 * 1024) {
+                reject(new Error('Gambar terlalu besar setelah kompresi (maks 2MB)'));
+              }
+              resolve(blob);
+            },
+            'image/jpeg',
+            quality
+          );
+        } catch (err) {
+          reject(err);
+        }
+      };
+
+      reader.readAsDataURL(file);
+    });
+  },
+
+  // Konversi blob ke base64
+  async toBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Konversi ke base64 gagal'));
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  },
+
+  // Validasi input
+  validateInputs({ nama, harga, satuan, gambar }) {
+    const errors = [];
+
+    if (!nama || typeof nama !== 'string' || nama.trim().length < 2) {
+      errors.push('Nama harus minimal 2 karakter');
+    }
+
+    if (!harga || isNaN(harga) || Number(harga) <= 0) {
+      errors.push('Harga harus angka lebih dari 0');
+    }
+
+    if (!satuan || typeof satuan !== 'string' || satuan.trim().length === 0) {
+      errors.push('Satuan harus diisi');
+    }
+
+    if (!gambar || !gambar.type.match('image.*')) {
+      errors.push('File harus berupa gambar');
+    } else if (gambar.size > 5 * 1024 * 1024) {
+      errors.push('Gambar terlalu besar (maks 5MB)');
+    }
+
+    if (errors.length > 0) {
+      throw new Error(errors.join('\n'));
+    }
+  },
+
+  // Tampilkan loading state
+  setLoading(element, isLoading, loadingText = 'Memproses...') {
+    if (isLoading) {
+      element.disabled = true;
+      element.dataset.originalText = element.textContent;
+      element.textContent = loadingText;
+    } else {
+      element.disabled = false;
+      element.textContent = element.dataset.originalText;
+    }
+  },
+};
+
+// ================ MAIN APPLICATION ================
+class BarangApp {
+  constructor() {
+    this.form = document.getElementById('formBarang');
+    this.katalog = document.getElementById('katalog');
+    this.init();
+  }
+
+  init() {
+    this.form.addEventListener('submit', (e) => this.handleSubmit(e));
+    this.loadBarang();
+  }
+
+  async handleSubmit(e) {
+    e.preventDefault();
+    const submitBtn = this.form.querySelector('button[type="submit"]');
+
+    try {
+      Utils.setLoading(submitBtn, true);
+
+      const formData = {
+        nama: this.form.nama.value.trim(),
+        harga: this.form.harga.value.trim(),
+        satuan: this.form.satuan.value.trim(),
+        gambar: this.form.gambar.files[0],
+      };
+
+      Utils.validateInputs(formData);
+
+      // Kompres gambar dan konversi ke base64
+      const compressed = await Utils.compressImage(formData.gambar);
+      const base64 = await Utils.toBase64(compressed);
+
+      // Kirim ke server
+      const response = await fetch('/api/tambah', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nama: formData.nama,
+          harga: Number(formData.harga),
+          satuan: formData.satuan,
+          base64,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || 'Gagal menambahkan barang');
+      }
+
+      alert('✅ Barang berhasil ditambahkan!');
+      this.form.reset();
+      await this.loadBarang();
+    } catch (error) {
+      console.error('Error:', error);
+      alert(`❌ ${error.message}`);
+    } finally {
+      Utils.setLoading(submitBtn, false);
+    }
+  }
+
+  async loadBarang() {
+    try {
+      this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
+
+      const response = await fetch('/api/list');
+      if (!response.ok) throw new Error('Gagal memuat data');
+
+      const items = await response.json();
+
+      if (items.length === 0) {
+        this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
+        return;
+      }
+
+      this.katalog.innerHTML = items
+        .map(
+          (item) => `
+          <div class="bg-white p-3 rounded shadow" data-id="${item.id}">
+            <img src="${this.escapeHtml(item.base64)}" alt="${this.escapeHtml(item.nama)}" 
+                 class="w-full h-40 object-cover rounded mb-2" />
+            <h2 class="text-lg font-semibold">${this.escapeHtml(item.nama)}</h2>
+            <p class="text-sm text-gray-600">Rp ${Number(item.harga).toLocaleString('id-ID')} / ${this.escapeHtml(item.satuan)}</p>
+            <button onclick="app.hapusBarang('${item.id}')" 
+                    class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">
+              Hapus
+            </button>
+          </div>
+        `
+        )
+        .join('');
+    } catch (error) {
+      console.error('Error:', error);
+      this.katalog.innerHTML = `
+        <div class="text-center py-4 text-red-500">
+          <p>Gagal memuat data: ${this.escapeHtml(error.message)}</p>
+        </div>
+      `;
+    }
+  }
+
+  async hapusBarang(id) {
+    try {
+      const itemElement = document.querySelector(`[data-id="${id}"]`);
+      const itemName = itemElement?.querySelector('h2')?.textContent || 'barang ini';
+
+      const konfirmasi = confirm(`Yakin ingin menghapus ${itemName}?`);
+      if (!konfirmasi) return;
+
+      const response = await fetch(`/api/hapus?id=${id}`, { method: 'POST' });
+      if (!response.ok) throw new Error('Gagal menghapus barang');
+
+      alert('✅ Barang berhasil dihapus');
+      await this.loadBarang();
+    } catch (error) {
+      console.error('Error:', error);
+      alert(`❌ ${error.message}`);
+    }
+  }
+
+  // Prevent XSS
+  escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') return unsafe;
+    return unsafe
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 }
 
-function toBase64(blob) {
-  return new Promise(resolve => {
-    const r = new FileReader();
-    r.onloadend = () => resolve(r.result);
-    r.readAsDataURL(blob);
-  });
-}
-
-document.getElementById("formBarang").addEventListener("submit", async e => {
-  e.preventDefault();
-  const nama = nama.value, harga = harga.value, satuan = satuan.value;
-  const imgFile = gambar.files[0];
-  const compressed = await compressImage(imgFile,800);
-  const base64 = await toBase64(compressed);
-  await fetch("/api/tambah", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ nama, harga, satuan, base64 })
-  });
-  location.reload();
-});
-
-window.onload = async () => {
-  const res = await fetch("/api/list");
-  const items = await res.json();
-  katalog.innerHTML = items.map((item,i)=>\`
-    <div class="bg-white p-2 rounded shadow">
-      <img src="\${item.base64}" class="w-full h-40 object-cover rounded" />
-      <h2 class="text-lg font-bold">\${item.nama}</h2>
-      <p>Rp \${Number(item.harga).toLocaleString()} / \${item.satuan}</p>
-      <button onclick="hapus(\${i})" class="mt-2 text-red-600">Hapus</button>
-    </div>
-  \`).join("");
-}
-
-async function hapus(i) {
-  await fetch(\`/api/hapus?id=\${i}\`,{ method:"POST" });
-  location.reload();
-}
-`;
+// Initialize app
+const app = new BarangApp();
+window.app = app; // Make it accessible for button clicks
