@@ -257,7 +257,7 @@ class BarangApp {
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
-      alert(`❌ ${error.message}`);
+      alert(\`❌ \${error.message}\`);
     } finally {
       Utils.setLoading(submitBtn, false);
     }
@@ -318,7 +318,7 @@ class BarangApp {
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
-      alert(`❌ ${error.message}`);
+      alert(\`❌ \${error.message}\`);
     }
   }
 
