@@ -122,6 +122,8 @@ const INDEX_HTML = `<!DOCTYPE html>
       position: absolute;
       max-width: none;
       cursor: move;
+      transform-origin: 0 0;
+      transition: transform 0.1s ease;
     }
     .cropper-overlay {
       position: absolute;
@@ -146,6 +148,28 @@ const INDEX_HTML = `<!DOCTYPE html>
       justify-content: center;
       gap: 10px;
     }
+    .zoom-controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      z-index: 10;
+    }
+    .zoom-btn {
+      width: 30px;
+      height: 30px;
+      background: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      cursor: pointer;
+      border: none;
+      font-weight: bold;
+    }
     .aspect-square { aspect-ratio: 1/1; }
     .login-modal-buttons {
       display: flex;
@@ -162,13 +186,29 @@ const INDEX_HTML = `<!DOCTYPE html>
       border-radius: 4px;
       margin-top: 10px;
     }
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      position: relative;
+    }
+    .title-center {
+      text-align: center;
+      flex-grow: 1;
+    }
+    .login-btn {
+      position: absolute;
+      right: 0;
+      transform: scale(0.9);
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
   <div class="w-full max-w-xl">
-    <div class="flex justify-between items-center mb-4">
-      <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
-      <button id="showLoginBtn" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
+    <div class="header-container">
+      <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
+      <button id="showLoginBtn" class="bg-gray-600 text-white px-3 py-1 rounded hover:bg-gray-700 transition login-btn">
         Login Admin
       </button>
     </div>
@@ -225,6 +265,10 @@ const INDEX_HTML = `<!DOCTYPE html>
           
           <!-- Image Cropper -->
           <div id="cropperContainer" class="cropper-container mt-2 hidden">
+            <div class="zoom-controls">
+              <button class="zoom-btn" id="zoomIn">+</button>
+              <button class="zoom-btn" id="zoomOut">-</button>
+            </div>
             <img id="cropperPreview" class="cropper-preview">
             <div class="cropper-overlay">
               <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
@@ -269,7 +313,10 @@ class BarangApp {
       naturalWidth: 0,
       naturalHeight: 0,
       previewWidth: 0,
-      previewHeight: 0
+      previewHeight: 0,
+      scale: 1,
+      minScale: 0.5,
+      maxScale: 3
     };
     
     this.initElements();
@@ -292,6 +339,8 @@ class BarangApp {
     this.cropConfirm = document.getElementById('cropConfirm');
     this.cropCancel = document.getElementById('cropCancel');
     this.fileInput = document.getElementById('gambar');
+    this.zoomInBtn = document.getElementById('zoomIn');
+    this.zoomOutBtn = document.getElementById('zoomOut');
   }
 
   initEventListeners() {
@@ -303,6 +352,8 @@ class BarangApp {
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
     this.cropConfirm.addEventListener('click', () => this.applyCrop());
     this.cropCancel.addEventListener('click', () => this.cancelCrop());
+    this.zoomInBtn.addEventListener('click', () => this.zoom(1.2));
+    this.zoomOutBtn.addEventListener('click', () => this.zoom(0.8));
     
     // Cropper drag events
     this.cropperPreview.addEventListener('mousedown', (e) => this.startDrag(e));
@@ -385,10 +436,10 @@ class BarangApp {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validasi tipe file
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!validTypes.includes(file.type)) {
-      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, atau WebP.');
+    // Validasi tipe file (termasuk AVIF)
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
+    if (!validTypes.includes(file.type) {
+      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
       this.fileInput.value = '';
       return;
     }
@@ -402,6 +453,7 @@ class BarangApp {
       this.cropper.image.onload = () => {
         this.cropper.naturalWidth = this.cropper.image.naturalWidth;
         this.cropper.naturalHeight = this.cropper.image.naturalHeight;
+        this.cropper.scale = 1; // Reset scale
         
         // Calculate initial dimensions to fit container
         const containerWidth = this.cropperContainer.offsetWidth;
@@ -430,11 +482,51 @@ class BarangApp {
     const containerWidth = this.cropperContainer.offsetWidth;
     const containerHeight = this.cropperContainer.offsetHeight;
     
-    this.cropper.offsetX = (containerWidth - this.cropper.previewWidth) / 2;
-    this.cropper.offsetY = (containerHeight - this.cropper.previewHeight) / 2;
+    this.cropper.offsetX = (containerWidth - this.cropper.previewWidth * this.cropper.scale) / 2;
+    this.cropper.offsetY = (containerHeight - this.cropper.previewHeight * this.cropper.scale) / 2;
     
+    this.updateImagePosition();
+  }
+
+  zoom(factor) {
+    const newScale = this.cropper.scale * factor;
+    
+    // Batasi zoom in/out
+    if (newScale < this.cropper.minScale || newScale > this.cropper.maxScale) {
+      return;
+    }
+    
+    // Simpan posisi mouse relatif terhadap gambar sebelum zoom
+    const containerRect = this.cropperContainer.getBoundingClientRect();
+    const mouseX = this.cropper.lastX - containerRect.left;
+    const mouseY = this.cropper.lastY - containerRect.top;
+    
+    const imgLeft = parseFloat(this.cropperPreview.style.left) || 0;
+    const imgTop = parseFloat(this.cropperPreview.style.top) || 0;
+    
+    const imgX = mouseX - imgLeft;
+    const imgY = mouseY - imgTop;
+    
+    // Hitung posisi relatif sebelum zoom
+    const relX = imgX / (this.cropper.previewWidth * this.cropper.scale);
+    const relY = imgY / (this.cropper.previewHeight * this.cropper.scale);
+    
+    // Update scale
+    this.cropper.scale = newScale;
+    
+    // Hitung offset baru untuk menjaga posisi relatif mouse
+    this.cropper.offsetX = mouseX - (this.cropper.previewWidth * this.cropper.scale * relX);
+    this.cropper.offsetY = mouseY - (this.cropper.previewHeight * this.cropper.scale * relY);
+    
+    this.updateImagePosition();
+  }
+
+  updateImagePosition() {
+    this.cropperPreview.style.width = (this.cropper.previewWidth * this.cropper.scale) + 'px';
+    this.cropperPreview.style.height = (this.cropper.previewHeight * this.cropper.scale) + 'px';
     this.cropperPreview.style.left = this.cropper.offsetX + 'px';
     this.cropperPreview.style.top = this.cropper.offsetY + 'px';
+    this.cropperPreview.style.transform = 'scale(' + this.cropper.scale + ')';
   }
 
   startDrag(e) {
@@ -442,6 +534,8 @@ class BarangApp {
     this.cropper.isDragging = true;
     this.cropper.startX = e.clientX;
     this.cropper.startY = e.clientY;
+    this.cropper.lastX = e.clientX;
+    this.cropper.lastY = e.clientY;
     this.cropper.offsetX = parseFloat(this.cropperPreview.style.left) || 0;
     this.cropper.offsetY = parseFloat(this.cropperPreview.style.top) || 0;
   }
@@ -450,6 +544,9 @@ class BarangApp {
     if (!this.cropper.isDragging) return;
     e.preventDefault();
     
+    this.cropper.lastX = e.clientX;
+    this.cropper.lastY = e.clientY;
+    
     const dx = e.clientX - this.cropper.startX;
     const dy = e.clientY - this.cropper.startY;
     
@@ -457,11 +554,16 @@ class BarangApp {
     const newY = this.cropper.offsetY + dy;
     
     // Apply boundaries to prevent dragging outside container
-    const maxX = this.cropperContainer.offsetWidth - this.cropper.previewWidth;
-    const maxY = this.cropperContainer.offsetHeight - this.cropper.previewHeight;
+    const maxX = this.cropperContainer.offsetWidth - (this.cropper.previewWidth * this.cropper.scale);
+    const maxY = this.cropperContainer.offsetHeight - (this.cropper.previewHeight * this.cropper.scale);
     
     const boundedX = Math.max(0, Math.min(maxX, newX));
     const boundedY = Math.max(0, Math.min(maxY, newY));
+    
+    this.cropper.offsetX = boundedX;
+    this.cropper.offsetY = boundedY;
+    this.cropper.startX = e.clientX;
+    this.cropper.startY = e.clientY;
     
     this.cropperPreview.style.left = boundedX + 'px';
     this.cropperPreview.style.top = boundedY + 'px';
@@ -469,9 +571,6 @@ class BarangApp {
 
   endDrag() {
     this.cropper.isDragging = false;
-    // Update current position after drag ends
-    this.cropper.offsetX = parseFloat(this.cropperPreview.style.left);
-    this.cropper.offsetY = parseFloat(this.cropperPreview.style.top);
   }
 
   applyCrop() {
@@ -487,8 +586,8 @@ class BarangApp {
     canvas.height = size;
     
     // Calculate scale factors
-    const scaleX = this.cropper.naturalWidth / this.cropper.previewWidth;
-    const scaleY = this.cropper.naturalHeight / this.cropper.previewHeight;
+    const scaleX = this.cropper.naturalWidth / (this.cropper.previewWidth * this.cropper.scale);
+    const scaleY = this.cropper.naturalHeight / (this.cropper.previewHeight * this.cropper.scale);
     
     // Calculate source coordinates relative to container
     const previewLeft = parseFloat(this.cropperPreview.style.left) || 0;
@@ -538,7 +637,8 @@ class BarangApp {
       png: 'image/png',
       gif: 'image/gif',
       webp: 'image/webp',
-      bmp: 'image/bmp'
+      bmp: 'image/bmp',
+      avif: 'image/avif'
     };
     return types[ext] || 'image/jpeg';
   }
@@ -547,6 +647,8 @@ class BarangApp {
     this.cropperContainer.classList.add('hidden');
     this.cropperPreview.style.left = '0';
     this.cropperPreview.style.top = '0';
+    this.cropper.scale = 1;
+    this.cropperPreview.style.transform = 'scale(1)';
   }
 
   async handleSubmit(e) {
