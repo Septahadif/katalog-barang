@@ -88,7 +88,7 @@ export default {
       return new Response(data || "[]", {
         headers: { 
           "Content-Type": "application/json",
-          "Cache-Control": "no-cache" // Prevent caching of item list
+          "Cache-Control": "no-cache"
         },
       });
     }
@@ -253,18 +253,29 @@ const INDEX_HTML = `<!DOCTYPE html>
       gap: 10px;
     }
 
-    /* Loading spinner */
-    .loading-spinner {
-      display: inline-block;
-      width: 20px;
-      height: 20px;
-      border: 3px solid rgba(0,0,0,.1);
-      border-radius: 50%;
-      border-top-color: #4b5563;
-      animation: spin 1s ease-in-out infinite;
+    /* Loading states */
+    .skeleton-item {
+      background-color: #f3f4f6;
+      border-radius: 0.25rem;
+      overflow: hidden;
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    .skeleton-image {
+      width: 100%;
+      height: 0;
+      padding-bottom: 100%;
+      background-color: #e5e7eb;
+    }
+    .skeleton-text {
+      height: 1rem;
+      background-color: #e5e7eb;
+      border-radius: 0.125rem;
+      margin: 0.5rem 0;
+    }
+    .skeleton-text.short {
+      width: 60%;
+    }
+    .skeleton-text.medium {
+      width: 80%;
     }
 
     /* Image container */
@@ -290,6 +301,16 @@ const INDEX_HTML = `<!DOCTYPE html>
     }
     .image-container img.loaded {
       opacity: 1;
+    }
+
+    /* Animation */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .item-animate {
+      animation: fadeIn 0.3s ease forwards;
+      opacity: 0;
     }
   </style>
 </head>
@@ -393,6 +414,9 @@ class BarangApp {
     this.isAdmin = false;
     this.cropper = null;
     this.croppedImageBlob = null;
+    this.loadingQueue = [];
+    this.currentLoadingIndex = 0;
+    this.loadingBatchSize = 4; // Number of items to load simultaneously
     
     this.initElements();
     this.initEventListeners();
@@ -682,9 +706,16 @@ class BarangApp {
 
   async loadBarang() {
     try {
-      this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
-      
-      const response = await fetch('/api/list?t=' + Date.now()); // Add timestamp to prevent caching
+      // Show skeleton loading
+      this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
+        <div class="bg-white p-3 rounded shadow skeleton-item">
+          <div class="skeleton-image"></div>
+          <div class="skeleton-text medium"></div>
+          <div class="skeleton-text short"></div>
+        </div>
+      \`).join('');
+
+      const response = await fetch('/api/list?t=' + Date.now());
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
@@ -694,35 +725,70 @@ class BarangApp {
         return;
       }
 
-      // Render item list with image placeholders
-      this.katalog.innerHTML = items.map(item => {
-        const escapedId = this.escapeHtml(item.id);
-        const escapedNama = this.escapeHtml(item.nama);
-        const escapedSatuan = this.escapeHtml(item.satuan);
-        const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
-        
-        return \`<div class="bg-white p-3 rounded shadow" data-id="\${escapedId}">
-          <div class="image-container">
-            <img 
-              src="/api/image/\${escapedId}?t=\${item.timestamp || Date.now()}" 
-              alt="\${escapedNama}" 
-              class="loading" 
-              loading="lazy"
-              onload="this.classList.remove('loading'); this.classList.add('loaded')"
-            >
-          </div>
-          <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
-          <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
-          \${this.isAdmin ? 
-            \`<button onclick="app.hapusBarang('\${escapedId}')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>\` 
-            : ''}
-        </div>\`;
-      }).join('');
-
+      // Clear existing content
+      this.katalog.innerHTML = '';
+      
+      // Initialize loading queue
+      this.loadingQueue = items;
+      this.currentLoadingIndex = 0;
+      
+      // Start loading items sequentially
+      this.processLoadingQueue();
     } catch (error) {
       console.error('Error:', error);
       this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
     }
+  }
+
+  processLoadingQueue() {
+    // Process a batch of items
+    const endIndex = Math.min(
+      this.currentLoadingIndex + this.loadingBatchSize,
+      this.loadingQueue.length
+    );
+
+    for (let i = this.currentLoadingIndex; i < endIndex; i++) {
+      this.addItemToDOM(this.loadingQueue[i], i);
+    }
+
+    this.currentLoadingIndex = endIndex;
+
+    // Continue processing if there are more items
+    if (this.currentLoadingIndex < this.loadingQueue.length) {
+      // Use setTimeout to allow the browser to render between batches
+      setTimeout(() => this.processLoadingQueue(), 100);
+    }
+  }
+
+  addItemToDOM(item, index) {
+    const escapedId = this.escapeHtml(item.id);
+    const escapedNama = this.escapeHtml(item.nama);
+    const escapedSatuan = this.escapeHtml(item.satuan);
+    const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
+    
+    const itemElement = document.createElement('div');
+    itemElement.className = 'bg-white p-3 rounded shadow item-animate';
+    itemElement.style.animationDelay = \`\${index * 0.05}s\`;
+    itemElement.setAttribute('data-id', escapedId);
+    
+    itemElement.innerHTML = \`
+      <div class="image-container">
+        <img 
+          src="/api/image/\${escapedId}?t=\${item.timestamp || Date.now()}" 
+          alt="\${escapedNama}" 
+          class="loading" 
+          loading="lazy"
+          onload="this.classList.remove('loading'); this.classList.add('loaded')"
+        >
+      </div>
+      <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
+      <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
+      \${this.isAdmin ? 
+        \`<button onclick="app.hapusBarang('\${escapedId}')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>\` 
+        : ''}
+    \`;
+    
+    this.katalog.appendChild(itemElement);
   }
 
   async hapusBarang(id) {
