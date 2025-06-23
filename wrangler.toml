@@ -1,9 +1,8 @@
 name = "katalog-barang"
-type = "javascript"
 workers_dev = true
 compatibility_date = "2025-06-23"
 main = "worker/index.js"
 
-[[kv_namespaces]]
-binding = "KATALOG"
-id = "552f4d9d18164051a77ad2e4ba52a43c"
+kv_namespaces = [
+  { binding = "KATALOG", id = "552f4d9d18164051a77ad2e4ba52a43c" }
+]
