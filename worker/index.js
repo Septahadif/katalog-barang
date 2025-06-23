@@ -110,7 +110,7 @@ const INDEX_HTML = `<!DOCTYPE html>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <style>
     .cropper-container { width: 100%; height: 300px; position: relative; overflow: hidden; }
-    .cropper-preview { width: 100%; height: 100%; object-fit: cover; }
+    .cropper-preview { width: 100%; height: 100%; object-fit: cover; position: absolute; }
     .cropper-overlay { 
       position: absolute; 
       top: 0; 
@@ -124,6 +124,7 @@ const INDEX_HTML = `<!DOCTYPE html>
     }
     .cropper-grid-cell { border: 1px dashed rgba(255,255,255,0.5); }
     .cropper-controls { position: absolute; bottom: 10px; width: 100%; text-align: center; }
+    .aspect-square { aspect-ratio: 1/1; }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -174,7 +175,9 @@ const INDEX_HTML = `<!DOCTYPE html>
           <div id="cropperContainer" class="cropper-container mt-2 hidden">
             <img id="cropperPreview" class="cropper-preview">
             <div class="cropper-overlay">
-              ${Array(9).fill('<div class="cropper-grid-cell"></div>').join('')}
+              <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
+              <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
+              <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
             </div>
             <div class="cropper-controls">
               <button type="button" id="cropCancel" class="bg-gray-500 text-white px-3 py-1 rounded mr-2">Batal</button>
@@ -308,6 +311,8 @@ class BarangApp {
       this.cropperContainer.classList.remove('hidden');
       this.cropper.image = new Image();
       this.cropper.image.src = event.target.result;
+      this.cropperPreview.style.left = '0px';
+      this.cropperPreview.style.top = '0px';
     };
     reader.readAsDataURL(file);
   }
@@ -316,8 +321,8 @@ class BarangApp {
     this.cropper.isDragging = true;
     this.cropper.startX = e.clientX;
     this.cropper.startY = e.clientY;
-    this.cropper.offsetX = this.cropperPreview.offsetLeft;
-    this.cropper.offsetY = this.cropperPreview.offsetTop;
+    this.cropper.offsetX = parseInt(this.cropperPreview.style.left) || 0;
+    this.cropper.offsetY = parseInt(this.cropperPreview.style.top) || 0;
   }
 
   drag(e) {
@@ -326,8 +331,8 @@ class BarangApp {
     const dx = e.clientX - this.cropper.startX;
     const dy = e.clientY - this.cropper.startY;
     
-    this.cropperPreview.style.left = `${this.cropper.offsetX + dx}px`;
-    this.cropperPreview.style.top = `${this.cropper.offsetY + dy}px`;
+    this.cropperPreview.style.left = (this.cropper.offsetX + dx) + 'px';
+    this.cropperPreview.style.top = (this.cropper.offsetY + dy) + 'px';
   }
 
   endDrag() {
@@ -445,29 +450,27 @@ class BarangApp {
         return;
       }
 
-      this.katalog.innerHTML = items.map(item => `
-        <div class="bg-white p-3 rounded shadow" data-id="${this.escapeHtml(item.id)}">
-          <div class="aspect-square overflow-hidden">
-            <img src="${this.escapeHtml(item.base64)}" alt="${this.escapeHtml(item.nama)}" 
-                 class="w-full h-full object-cover">
-          </div>
-          <h2 class="text-lg font-semibold mt-2">${this.escapeHtml(item.nama)}</h2>
-          <p class="text-sm text-gray-600">Rp ${Number(item.harga).toLocaleString('id-ID')} / ${this.escapeHtml(item.satuan)}</p>
-          ${this.isAdmin ? `
-            <button onclick="app.hapusBarang('${this.escapeHtml(item.id)}')" 
-                    class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">
-              Hapus
-            </button>
-          ` : ''}
-        </div>
-      `).join('');
+      this.katalog.innerHTML = items.map(item => {
+        const escapedId = this.escapeHtml(item.id);
+        const escapedBase64 = this.escapeHtml(item.base64);
+        const escapedNama = this.escapeHtml(item.nama);
+        const escapedSatuan = this.escapeHtml(item.satuan);
+        const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
+        
+        return '<div class="bg-white p-3 rounded shadow" data-id="' + escapedId + '">' +
+          '<div class="aspect-square overflow-hidden">' +
+            '<img src="' + escapedBase64 + '" alt="' + escapedNama + '" class="w-full h-full object-cover">' +
+          '</div>' +
+          '<h2 class="text-lg font-semibold mt-2">' + escapedNama + '</h2>' +
+          '<p class="text-sm text-gray-600">Rp ' + hargaFormatted + ' / ' + escapedSatuan + '</p>' +
+          (this.isAdmin ? 
+            '<button onclick="app.hapusBarang(\\'' + escapedId + '\\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
+            : '') +
+        '</div>';
+      }).join('');
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = `
-        <div class="text-center py-4 text-red-500">
-          <p>Gagal memuat data: ${this.escapeHtml(error.message)}</p>
-        </div>
-      `;
+      this.katalog.innerHTML = '<div class="text-center py-4 text-red-500"><p>Gagal memuat data: ' + this.escapeHtml(error.message) + '</p></div>';
     }
   }
 
