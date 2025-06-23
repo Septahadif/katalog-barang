@@ -444,96 +444,96 @@ class BarangApp {
   }
 
   handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+  const file = e.target.files[0];
+  if (!file) return;
 
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
-    if (!validTypes.includes(file.type)) {
-      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
-      this.fileInput.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      
-      img.onload = () => {
-        // Atur ukuran modal berdasarkan ukuran gambar
-        const maxModalWidth = window.innerWidth * 0.9;
-        const maxModalHeight = window.innerHeight * 0.8;
-        let displayWidth = img.width;
-        let displayHeight = img.height;
-        
-        // Skala gambar agar muat di modal
-        if (img.width > maxModalWidth || img.height > maxModalHeight) {
-          const ratio = Math.min(
-            maxModalWidth / img.width,
-            maxModalHeight / img.height
-          );
-          displayWidth = img.width * ratio;
-          displayHeight = img.height * ratio;
-        }
-        
-        this.cropImage.style.width = `${displayWidth}px`;
-        this.cropImage.style.height = `${displayHeight}px`;
-        this.cropImage.src = img.src;
-        this.cropModal.style.display = 'flex';
-        
-        if (this.cropper) {
-          this.cropper.destroy();
-        }
-        
-        this.cropper = new Cropper(this.cropImage, {
-          aspectRatio: 1,
-          viewMode: 3,
-          autoCropArea: 0.8,
-          responsive: false,
-          restore: false,
-          movable: false,
-          zoomable: false,
-          zoomOnTouch: false,
-          zoomOnWheel: false,
-          cropBoxMovable: false,
-          cropBoxResizable: false,
-          toggleDragModeOnDblclick: false,
-          ready: () => {
-            const containerData = this.cropper.getContainerData();
-            const cropBoxSize = Math.min(containerData.width, containerData.height) * 0.8;
-            
-            this.cropper.setCropBoxData({
-              width: cropBoxSize,
-              height: cropBoxSize,
-              left: (containerData.width - cropBoxSize) / 2,
-              top: (containerData.height - cropBoxSize) / 2
-            });
-            
-            // Atur zoom awal agar gambar terlihat penuh
-            const imageData = this.cropper.getImageData();
-            const scale = Math.min(
-              containerData.width / imageData.naturalWidth,
-              containerData.height / imageData.naturalHeight
-            );
-            
-            this.cropper.zoomTo(scale);
-          }
-        });
-      };
-      
-      img.onerror = () => {
-        alert('Gagal memuat gambar. Coba gambar lain.');
-        this.fileInput.value = '';
-      };
-    };
-    
-    reader.onerror = () => {
-      alert('Gagal membaca file. Coba lagi.');
-      this.fileInput.value = '';
-    };
-    
-    reader.readAsDataURL(file);
+  const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
+  if (!validTypes.includes(file.type)) {
+    alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
+    this.fileInput.value = '';
+    return;
   }
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const img = new Image();
+    img.src = event.target.result;
+    
+    img.onload = () => {
+      // Atur ukuran modal berdasarkan ukuran gambar
+      const maxModalWidth = window.innerWidth * 0.9;
+      const maxModalHeight = window.innerHeight * 0.8;
+      let displayWidth = img.width;
+      let displayHeight = img.height;
+      
+      // Skala gambar agar muat di modal
+      if (img.width > maxModalWidth || img.height > maxModalHeight) {
+        const ratio = Math.min(
+          maxModalWidth / img.width,
+          maxModalHeight / img.height
+        );
+        displayWidth = img.width * ratio;
+        displayHeight = img.height * ratio;
+      }
+      
+      this.cropImage.style.width = displayWidth + 'px';
+      this.cropImage.style.height = displayHeight + 'px';
+      this.cropImage.src = img.src;
+      this.cropModal.style.display = 'flex';
+      
+      if (this.cropper) {
+        this.cropper.destroy();
+      }
+      
+      this.cropper = new Cropper(this.cropImage, {
+        aspectRatio: 1,
+        viewMode: 3,
+        autoCropArea: 0.8,
+        responsive: false,
+        restore: false,
+        movable: false,
+        zoomable: false,
+        zoomOnTouch: false,
+        zoomOnWheel: false,
+        cropBoxMovable: false,
+        cropBoxResizable: false,
+        toggleDragModeOnDblclick: false,
+        ready: () => {
+          const containerData = this.cropper.getContainerData();
+          const cropBoxSize = Math.min(containerData.width, containerData.height) * 0.8;
+          
+          this.cropper.setCropBoxData({
+            width: cropBoxSize,
+            height: cropBoxSize,
+            left: (containerData.width - cropBoxSize) / 2,
+            top: (containerData.height - cropBoxSize) / 2
+          });
+          
+          // Atur zoom awal agar gambar terlihat penuh
+          const imageData = this.cropper.getImageData();
+          const scale = Math.min(
+            containerData.width / imageData.naturalWidth,
+            containerData.height / imageData.naturalHeight
+          );
+          
+          this.cropper.zoomTo(scale);
+        }
+      });
+    };
+    
+    img.onerror = () => {
+      alert('Gagal memuat gambar. Coba gambar lain.');
+      this.fileInput.value = '';
+    };
+  };
+  
+  reader.onerror = () => {
+    alert('Gagal membaca file. Coba lagi.');
+    this.fileInput.value = '';
+  };
+  
+  reader.readAsDataURL(file);
+}
 
   saveCrop() {
     if (!this.cropper) {
