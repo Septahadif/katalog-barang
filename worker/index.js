@@ -767,4 +767,4 @@ class BarangApp {
 // Initialize app
 const app = new BarangApp();
 window.app = app;
-';
+`;
