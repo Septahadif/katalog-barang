@@ -155,6 +155,13 @@ const INDEX_HTML = `<!DOCTYPE html>
     #adminControls {
       transition: all 0.3s ease;
     }
+    .image-preview {
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -214,6 +221,7 @@ const INDEX_HTML = `<!DOCTYPE html>
         <div>
           <label class="block mb-1 font-medium">Gambar</label>
           <input id="gambar" name="gambar" type="file" accept="image/*" required class="w-full border p-2 rounded">
+          <!-- Preview gambar akan muncul di sini -->
           
           <!-- Image Cropper -->
           <div id="cropperContainer" class="cropper-container mt-2 hidden">
@@ -377,6 +385,14 @@ class BarangApp {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Validasi tipe file
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, atau WebP.');
+      this.fileInput.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       this.cropperPreview.src = event.target.result;
@@ -462,7 +478,7 @@ class BarangApp {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     
-    // Set canvas to square size (1:1 ratio)
+    // Set canvas size (1:1 ratio)
     const size = Math.min(
       this.cropperContainer.offsetWidth, 
       this.cropperContainer.offsetHeight
@@ -474,10 +490,11 @@ class BarangApp {
     const scaleX = this.cropper.naturalWidth / this.cropper.previewWidth;
     const scaleY = this.cropper.naturalHeight / this.cropper.previewHeight;
     
-    // Calculate source coordinates
-    const previewLeft = parseFloat(this.cropperPreview.style.left);
-    const previewTop = parseFloat(this.cropperPreview.style.top);
+    // Calculate source coordinates relative to container
+    const previewLeft = parseFloat(this.cropperPreview.style.left) || 0;
+    const previewTop = parseFloat(this.cropperPreview.style.top) || 0;
     
+    // Calculate actual crop area in original image coordinates
     const sx = -previewLeft * scaleX;
     const sy = -previewTop * scaleY;
     const sWidth = this.cropperContainer.offsetWidth * scaleX;
@@ -486,23 +503,48 @@ class BarangApp {
     // Draw cropped image (1:1 ratio)
     ctx.drawImage(
       this.cropper.image,
-      sx, sy, sWidth, sHeight,
-      0, 0, size, size
+      sx, sy, sWidth, sHeight, // source rectangle
+      0, 0, size, size         // destination rectangle
     );
     
     // Convert to blob and update file input
+    const fileExt = this.fileInput.files[0].name.split('.').pop().toLowerCase();
+    const mimeType = this.getMimeType(fileExt);
+    
     canvas.toBlob((blob) => {
-      const file = new File([blob], 'cropped.jpg', { type: 'image/jpeg' });
+      const fileName = `cropped.${fileExt}`;
+      const file = new File([blob], fileName, { type: mimeType });
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       this.fileInput.files = dataTransfer.files;
+      
+      // Preview hasil crop
+      const previewUrl = URL.createObjectURL(blob);
+      const preview = document.createElement('img');
+      preview.src = previewUrl;
+      preview.className = 'w-full mt-2';
+      this.form.querySelector('.image-preview')?.remove();
+      this.form.querySelector('#gambar').after(preview);
+      preview.classList.add('image-preview');
+      
       this.cancelCrop();
-    }, 'image/jpeg', 0.9);
+    }, mimeType, 0.9);
+  }
+
+  getMimeType(ext) {
+    const types = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      bmp: 'image/bmp'
+    };
+    return types[ext] || 'image/jpeg';
   }
 
   cancelCrop() {
     this.cropperContainer.classList.add('hidden');
-    this.fileInput.value = '';
     this.cropperPreview.style.left = '0';
     this.cropperPreview.style.top = '0';
   }
@@ -526,10 +568,17 @@ class BarangApp {
         throw new Error('Semua field harus diisi');
       }
 
-      // Convert image to base64
-      const reader = new FileReader();
+      // Dapatkan ekstensi file asli
+      const fileExt = formData.gambar.name.split('.').pop().toLowerCase();
+      
+      // Convert image to base64 dengan type yang sesuai
       const base64 = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result);
+        const reader = new FileReader();
+        reader.onload = () => {
+          // Potong prefix data:image/...;base64, jika sudah ada
+          const base64Data = reader.result.split(',')[1] || reader.result;
+          resolve(`data:image/${fileExt};base64,${base64Data}`);
+        };
         reader.onerror = reject;
         reader.readAsDataURL(formData.gambar);
       });
@@ -551,6 +600,8 @@ class BarangApp {
 
       alert('Barang berhasil ditambahkan!');
       this.form.reset();
+      // Hapus preview gambar jika ada
+      document.querySelector('.image-preview')?.remove();
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
