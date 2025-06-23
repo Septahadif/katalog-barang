@@ -119,18 +119,16 @@ const INDEX_HTML = `<!DOCTYPE html>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
   <style>
-    .cropper-modal {
-      background-color: white;
-    }
+    /* Cropper Custom Styles */
     .cropper-container {
-      max-height: 400px;
+      background-color: white !important;
     }
-    .cropper-crop-box, .cropper-view-box {
-      border-radius: 50%;
+    .cropper-modal {
+      background-color: white !important;
     }
     .cropper-view-box {
-      box-shadow: 0 0 0 1px #39f;
-      outline: 0;
+      outline: 1px solid #39f;
+      box-shadow: none;
     }
     .cropper-dashed {
       border: 0 dashed #eee;
@@ -144,6 +142,8 @@ const INDEX_HTML = `<!DOCTYPE html>
     .cropper-line {
       background-color: #39f;
     }
+    
+    /* Custom Styles */
     .login-modal-buttons {
       display: flex;
       gap: 10px;
@@ -158,6 +158,8 @@ const INDEX_HTML = `<!DOCTYPE html>
       border: 1px solid #ddd;
       border-radius: 4px;
       margin-top: 10px;
+      background-color: white;
+      display: block;
     }
     .header-container {
       display: flex;
@@ -181,6 +183,8 @@ const INDEX_HTML = `<!DOCTYPE html>
       border-radius: 0.375rem;
       font-size: 0.875rem;
     }
+    
+    /* Crop Modal Styles */
     #cropModal {
       display: none;
       position: fixed;
@@ -196,16 +200,23 @@ const INDEX_HTML = `<!DOCTYPE html>
     #cropModalContent {
       background: white;
       padding: 20px;
+      padding-bottom: 80px;
       border-radius: 8px;
-      max-width: 90%;
-      max-height: 90%;
+      max-width: 95%;
+      max-height: 90vh;
+      position: relative;
     }
     #cropImage {
       max-width: 100%;
       max-height: 70vh;
+      display: block;
+      background-color: white;
     }
     .crop-actions {
-      margin-top: 15px;
+      position: absolute;
+      bottom: 20px;
+      left: 0;
+      right: 0;
       display: flex;
       justify-content: center;
       gap: 10px;
@@ -305,7 +316,6 @@ const INDEX_HTML = `<!DOCTYPE html>
   <script src="script.js"></script>
 </body>
 </html>`;
-
 const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
@@ -430,47 +440,84 @@ class BarangApp {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      this.cropImage.src = event.target.result;
-      this.cropModal.style.display = 'flex';
+      // Buat gambar baru untuk memastikan load sempurna
+      const img = new Image();
+      img.src = event.target.result;
       
-      // Inisialisasi Cropper.js
-      if (this.cropper) {
-        this.cropper.destroy();
-      }
+      img.onload = () => {
+        this.cropImage.src = img.src;
+        this.cropModal.style.display = 'flex';
+        
+        // Hancurkan cropper lama jika ada
+        if (this.cropper) {
+          this.cropper.destroy();
+        }
+        
+        // Inisialisasi Cropper.js dengan pengaturan baru
+        this.cropper = new Cropper(this.cropImage, {
+          aspectRatio: 1,
+          viewMode: 1,
+          autoCropArea: 0.8,
+          responsive: true,
+          guides: false,
+          center: false,
+          highlight: false,
+          cropBoxMovable: false,
+          cropBoxResizable: false,
+          dragMode: 'move',
+          toggleDragModeOnDblclick: false,
+          background: true,
+          modal: false,
+          ready: () => {
+            // Pastikan gambar terlihat dengan jelas
+            this.cropper.setCanvasData({
+              width: img.width,
+              height: img.height
+            });
+          }
+        });
+      };
       
-      this.cropper = new Cropper(this.cropImage, {
-        aspectRatio: 1,  // Rasio 1:1 (persegi)
-        viewMode: 1,     // Mode view
-        autoCropArea: 1, // Area crop otomatis penuh
-        responsive: true,
-        guides: false,
-        center: false,
-        highlight: false,
-        cropBoxMovable: false,    // Tidak bisa pindah crop box
-        cropBoxResizable: false,  // Tidak bisa resize crop box
-        dragMode: 'move',         // Mode drag untuk memindahkan gambar
-        toggleDragModeOnDblclick: false
-      });
+      img.onerror = () => {
+        alert('Gagal memuat gambar. Coba gambar lain.');
+        this.fileInput.value = '';
+      };
     };
+    
+    reader.onerror = () => {
+      alert('Gagal membaca file. Coba lagi.');
+      this.fileInput.value = '';
+    };
+    
     reader.readAsDataURL(file);
   }
 
   saveCrop() {
-    // Dapatkan canvas hasil crop
+    if (!this.cropper) {
+      alert('Cropper belum siap');
+      return;
+    }
+
+    // Dapatkan canvas hasil crop dengan kualitas tinggi
     const canvas = this.cropper.getCroppedCanvas({
-      width: 500,
-      height: 500,
-      minWidth: 256,
-      minHeight: 256,
-      maxWidth: 1024,
-      maxHeight: 1024,
+      width: 800,
+      height: 800,
+      minWidth: 400,
+      minHeight: 400,
+      maxWidth: 1200,
+      maxHeight: 1200,
       fillColor: '#fff',
       imageSmoothingEnabled: true,
       imageSmoothingQuality: 'high',
     });
 
-    // Konversi ke blob
+    // Konversi ke blob dengan kualitas tinggi
     canvas.toBlob((blob) => {
+      if (!blob) {
+        alert('Gagal melakukan crop gambar');
+        return;
+      }
+
       this.croppedImageBlob = blob;
       
       // Tampilkan preview
@@ -492,7 +539,7 @@ class BarangApp {
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       this.fileInput.files = dataTransfer.files;
-    }, 'image/jpeg', 0.9); // Kualitas 90%
+    }, 'image/jpeg', 0.95); // Kualitas 95%
   }
 
   cancelCrop() {
