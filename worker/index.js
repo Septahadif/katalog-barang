@@ -3,52 +3,64 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Serve static index.html
+    // Serve HTML
     if (path === "/" || path === "/index.html") {
       return new Response(INDEX_HTML, {
-        headers: { "Content-Type": "text/html" }
+        headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     }
 
-    // Serve script.js
+    // Serve JS
     if (path === "/script.js") {
       return new Response(SCRIPT_JS, {
-        headers: { "Content-Type": "application/javascript" }
+        headers: { "Content-Type": "application/javascript; charset=utf-8" },
       });
     }
 
-    // API: ambil data katalog
+    // GET list barang
     if (path === "/api/list") {
       const data = await env.KATALOG.get("items");
       return new Response(data || "[]", {
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
-    // API: tambah barang
+    // POST tambah barang
     if (path === "/api/tambah" && req.method === "POST") {
-      const item = await req.json();
+      const body = await req.json();
       const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+
+      // Tambahkan ID agar bisa dihapus
+      const item = { ...body, id: Date.now().toString() };
       items.push(item);
+
       await env.KATALOG.put("items", JSON.stringify(items));
-      return new Response("OK");
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // API: hapus barang
+    // POST hapus barang
     if (path === "/api/hapus" && req.method === "POST") {
-      const id = parseInt(url.searchParams.get("id"));
+      const id = url.searchParams.get("id");
+      if (!id) return new Response("Missing ID", { status: 400 });
+
       const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-      items.splice(id, 1);
-      await env.KATALOG.put("items", JSON.stringify(items));
-      return new Response("Deleted");
+      const updated = items.filter(item => item.id !== id);
+      await env.KATALOG.put("items", JSON.stringify(updated));
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     return new Response("404 Not Found", { status: 404 });
   }
 }
 
-// Kamu harus menyalin isi index.html dan script.js ke sini:
-const INDEX_HTML = `<!DOCTYPE html>
+// Masukkan isi index.html kamu di sini (dalam string)
+const INDEX_HTML = `
+<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
@@ -90,8 +102,9 @@ const INDEX_HTML = `<!DOCTYPE html>
   <script src="script.js"></script>
 </body>
 </html>
-;
+`;
 
+// Masukkan isi script.js kamu di sini (dalam string)
 const SCRIPT_JS = `
 // ================ UTILITY FUNCTIONS ================
 const Utils = {
@@ -324,3 +337,4 @@ class BarangApp {
 // Initialize app
 const app = new BarangApp();
 window.app = app; // Make it accessible for button clicks
+`;
