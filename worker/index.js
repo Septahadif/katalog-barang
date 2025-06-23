@@ -1,224 +1,112 @@
 export default {
-  async fetch(request, env, ctx) {
-    try {
-      const url = new URL(request.url);
-      const path = url.pathname;
+  async fetch(req, env, ctx) {
+    const url = new URL(req.url);
+    const path = url.pathname;
 
-      // Set CORS headers for all responses
-      const corsHeaders = {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Cookie",
-      };
+    // Serve HTML
+    if (path === "/" || path === "/index.html") {
+      return new Response(INDEX_HTML, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
 
-      // Handle OPTIONS preflight request
-      if (request.method === "OPTIONS") {
-        return new Response(null, {
-          headers: corsHeaders,
-        });
-      }
+    // Serve JS
+    if (path === "/script.js") {
+      return new Response(SCRIPT_JS, {
+        headers: { "Content-Type": "application/javascript; charset=utf-8" },
+      });
+    }
 
-      // Serve static assets
-      if (path === "/" || path === "/index.html") {
-        return new Response(INDEX_HTML, {
-          headers: { 
-            "Content-Type": "text/html; charset=utf-8",
-            ...corsHeaders
-          },
-        });
-      }
+    // Serve Cropper CSS
+    if (path === "/cropper.css") {
+      return new Response(CROPPER_CSS, {
+        headers: { "Content-Type": "text/css" },
+      });
+    }
 
-      if (path === "/script.js") {
-        return new Response(SCRIPT_JS, {
-          headers: { 
-            "Content-Type": "application/javascript; charset=utf-8",
-            ...corsHeaders
-          },
-        });
-      }
-
-      if (path === "/cropper.css") {
-        return new Response(CROPPER_CSS, {
-          headers: { 
-            "Content-Type": "text/css",
-            ...corsHeaders
-          },
-        });
-      }
-
-      // API endpoints
-      if (path === "/api/login" && request.method === "POST") {
-        const { username, password } = await request.json();
-        const isAdmin = username === "septa" && password === "septa2n2n";
-        
-        if (isAdmin) {
-          return new Response(JSON.stringify({ success: true }), {
-            headers: { 
-              "Content-Type": "application/json",
-              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict",
-              ...corsHeaders
-            }
-          });
-        }
-        return new Response(JSON.stringify({ success: false }), { 
-          status: 401,
-          headers: corsHeaders
-        });
-      }
-
-      if (path === "/api/check-admin") {
-        const cookie = request.headers.get("Cookie") || "";
-        return new Response(JSON.stringify({ isAdmin: cookie.includes("admin=true") }), {
-          headers: { 
-            "Content-Type": "application/json",
-            ...corsHeaders
-          }
-        });
-      }
-
-      if (path === "/api/logout") {
+    // Login Admin
+    if (path === "/api/login" && req.method === "POST") {
+      const { username, password } = await req.json();
+      const isAdmin = username === "septa" && password === "septa2n2n";
+      
+      if (isAdmin) {
         return new Response(JSON.stringify({ success: true }), {
           headers: { 
             "Content-Type": "application/json",
-            "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT",
-            ...corsHeaders
+            "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
           }
         });
       }
+      return new Response(JSON.stringify({ success: false }), { status: 401 });
+    }
 
-      // GET list barang
-      if (path === "/api/list") {
-        try {
-          const data = await env.KATALOG.get("items", "json") || [];
-          return new Response(JSON.stringify(data), {
-            headers: { 
-              "Content-Type": "application/json",
-              "Cache-Control": "public, max-age=60",
-              ...corsHeaders
-            },
-          });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: "Failed to load items" }), {
-            status: 500,
-            headers: corsHeaders
-          });
-        }
-      }
-
-      // POST tambah barang (hanya admin)
-      if (path === "/api/tambah" && request.method === "POST") {
-        const cookie = request.headers.get("Cookie") || "";
-        if (!cookie.includes("admin=true")) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), { 
-            status: 401,
-            headers: corsHeaders
-          });
-        }
-
-        try {
-          const body = await request.json();
-          if (!body.nama || !body.harga || !body.satuan || !body.base64) {
-            return new Response(JSON.stringify({ error: "Missing required fields" }), {
-              status: 400,
-              headers: corsHeaders
-            });
-          }
-
-          // Validasi input
-          const nama = String(body.nama).substring(0, 100);
-          const harga = Math.min(Math.max(Number(body.harga) || 0, 0), 999999999);
-          const satuan = String(body.satuan).substring(0, 20);
-          const base64 = String(body.base64);
-
-          if (!base64.startsWith("data:image/")) {
-            return new Response(JSON.stringify({ error: "Invalid image format" }), {
-              status: 400,
-              headers: corsHeaders
-            });
-          }
-
-          const items = await env.KATALOG.get("items", "json") || [];
-
-          const item = { 
-            id: Date.now().toString(),
-            nama,
-            harga,
-            satuan,
-            base64,
-            createdAt: new Date().toISOString()
-          };
-          
-          items.push(item);
-          await env.KATALOG.put("items", JSON.stringify(items));
-          
-          return new Response(JSON.stringify({ success: true, id: item.id }), {
-            headers: { 
-              "Content-Type": "application/json",
-              ...corsHeaders
-            },
-          });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: "Internal server error" }), {
-            status: 500,
-            headers: corsHeaders
-          });
-        }
-      }
-
-      // POST hapus barang (hanya admin)
-      if (path === "/api/hapus" && request.method === "POST") {
-        const cookie = request.headers.get("Cookie") || "";
-        if (!cookie.includes("admin=true")) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), { 
-            status: 401,
-            headers: corsHeaders
-          });
-        }
-
-        try {
-          const { id } = await request.json();
-          if (!id) {
-            return new Response(JSON.stringify({ error: "Missing ID" }), {
-              status: 400,
-              headers: corsHeaders
-            });
-          }
-
-          const items = await env.KATALOG.get("items", "json") || [];
-          const updated = items.filter(item => item.id !== id);
-          
-          await env.KATALOG.put("items", JSON.stringify(updated));
-
-          return new Response(JSON.stringify({ success: true }), {
-            headers: { 
-              "Content-Type": "application/json",
-              ...corsHeaders
-            },
-          });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: "Internal server error" }), {
-            status: 500,
-            headers: corsHeaders
-          });
-        }
-      }
-
-      // Not found handler
-      return new Response("404 Not Found", { 
-        status: 404,
-        headers: corsHeaders
+    // Check Admin Status
+    if (path === "/api/check-admin") {
+      const cookie = req.headers.get("Cookie") || "";
+      return new Response(JSON.stringify({ isAdmin: cookie.includes("admin=true") }), {
+        headers: { "Content-Type": "application/json" }
       });
-    } catch (error) {
-      return new Response("Internal Server Error", {
-        status: 500,
-        headers: {
-          "Content-Type": "text/plain",
-          "Access-Control-Allow-Origin": "*",
+    }
+
+    // Logout
+    if (path === "/api/logout") {
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { 
+          "Content-Type": "application/json",
+          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
         }
       });
     }
+
+    // GET list barang
+    if (path === "/api/list") {
+      const data = await env.KATALOG.get("items");
+      return new Response(data || "[]", {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // POST tambah barang (hanya admin)
+    if (path === "/api/tambah" && req.method === "POST") {
+      const cookie = req.headers.get("Cookie") || "";
+      if (!cookie.includes("admin=true")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      }
+
+      const body = await req.json();
+      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+
+      const item = { ...body, id: Date.now().toString() };
+      items.push(item);
+
+      await env.KATALOG.put("items", JSON.stringify(items));
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // POST hapus barang (hanya admin)
+    if (path === "/api/hapus" && req.method === "POST") {
+      const cookie = req.headers.get("Cookie") || "";
+      if (!cookie.includes("admin=true")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      }
+
+      const id = url.searchParams.get("id");
+      if (!id) return new Response("Missing ID", { status: 400 });
+
+      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+      const updated = items.filter(item => item.id !== id);
+      await env.KATALOG.put("items", JSON.stringify(updated));
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response("404 Not Found", { status: 404 });
   }
-};
+}
 
 const CROPPER_CSS = `/* Cropper.js CSS will be loaded from CDN */`;
 
@@ -428,7 +316,6 @@ const INDEX_HTML = `<!DOCTYPE html>
   <script src="script.js"></script>
 </body>
 </html>`;
-
 const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
@@ -482,20 +369,12 @@ class BarangApp {
 
   async checkAdminStatus() {
     try {
-      const response = await fetch('/api/check-admin', {
-        credentials: 'include',
-        cache: 'no-store'
-      });
-      
-      if (!response.ok) throw new Error('Network response was not ok');
-      
+      const response = await fetch('/api/check-admin');
       const { isAdmin } = await response.json();
       this.isAdmin = isAdmin;
       this.toggleAdminUI();
     } catch (error) {
       console.error('Error checking admin status:', error);
-      this.isAdmin = false;
-      this.toggleAdminUI();
     }
   }
 
@@ -519,8 +398,7 @@ class BarangApp {
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-        credentials: 'include'
+        body: JSON.stringify({ username, password })
       });
       
       if (response.ok) {
@@ -539,10 +417,7 @@ class BarangApp {
 
   async handleLogout() {
     try {
-      await fetch('/api/logout', {
-        method: 'POST',
-        credentials: 'include'
-      });
+      await fetch('/api/logout');
       this.isAdmin = false;
       this.toggleAdminUI();
       this.loadBarang();
@@ -555,6 +430,7 @@ class BarangApp {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Validasi tipe file
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
     if (!validTypes.includes(file.type)) {
       alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
@@ -564,64 +440,40 @@ class BarangApp {
 
     const reader = new FileReader();
     reader.onload = (event) => {
+      // Buat gambar baru untuk memastikan load sempurna
       const img = new Image();
       img.src = event.target.result;
       
       img.onload = () => {
-        const maxModalWidth = window.innerWidth * 0.9;
-        const maxModalHeight = window.innerHeight * 0.8;
-        let displayWidth = img.width;
-        let displayHeight = img.height;
-        
-        if (img.width > maxModalWidth || img.height > maxModalHeight) {
-          const ratio = Math.min(
-            maxModalWidth / img.width,
-            maxModalHeight / img.height
-          );
-          displayWidth = img.width * ratio;
-          displayHeight = img.height * ratio;
-        }
-        
-        this.cropImage.style.width = displayWidth + 'px';
-        this.cropImage.style.height = displayHeight + 'px';
         this.cropImage.src = img.src;
         this.cropModal.style.display = 'flex';
         
+        // Hancurkan cropper lama jika ada
         if (this.cropper) {
           this.cropper.destroy();
         }
         
+        // Inisialisasi Cropper.js dengan pengaturan baru
         this.cropper = new Cropper(this.cropImage, {
           aspectRatio: 1,
-          viewMode: 3,
+          viewMode: 1,
           autoCropArea: 0.8,
-          responsive: false,
-          restore: false,
-          movable: false,
-          zoomable: false,
-          zoomOnTouch: false,
-          zoomOnWheel: false,
+          responsive: true,
+          guides: false,
+          center: false,
+          highlight: false,
           cropBoxMovable: false,
           cropBoxResizable: false,
+          dragMode: 'move',
           toggleDragModeOnDblclick: false,
+          background: true,
+          modal: false,
           ready: () => {
-            const containerData = this.cropper.getContainerData();
-            const cropBoxSize = Math.min(containerData.width, containerData.height) * 0.8;
-            
-            this.cropper.setCropBoxData({
-              width: cropBoxSize,
-              height: cropBoxSize,
-              left: (containerData.width - cropBoxSize) / 2,
-              top: (containerData.height - cropBoxSize) / 2
+            // Pastikan gambar terlihat dengan jelas
+            this.cropper.setCanvasData({
+              width: img.width,
+              height: img.height
             });
-            
-            const imageData = this.cropper.getImageData();
-            const scale = Math.min(
-              containerData.width / imageData.naturalWidth,
-              containerData.height / imageData.naturalHeight
-            );
-            
-            this.cropper.zoomTo(scale);
           }
         });
       };
@@ -646,6 +498,7 @@ class BarangApp {
       return;
     }
 
+    // Dapatkan canvas hasil crop dengan kualitas tinggi
     const canvas = this.cropper.getCroppedCanvas({
       width: 800,
       height: 800,
@@ -654,9 +507,11 @@ class BarangApp {
       maxWidth: 1200,
       maxHeight: 1200,
       fillColor: '#fff',
+      imageSmoothingEnabled: true,
       imageSmoothingQuality: 'high',
     });
 
+    // Konversi ke blob dengan kualitas tinggi
     canvas.toBlob((blob) => {
       if (!blob) {
         alert('Gagal melakukan crop gambar');
@@ -665,14 +520,17 @@ class BarangApp {
 
       this.croppedImageBlob = blob;
       
+      // Tampilkan preview
       const previewUrl = URL.createObjectURL(blob);
       this.imagePreview.src = previewUrl;
       this.imagePreviewContainer.classList.remove('hidden');
       
+      // Tutup modal crop
       this.cropModal.style.display = 'none';
       this.cropper.destroy();
       this.cropper = null;
       
+      // Update file input dengan file yang sudah di-crop
       const fileName = this.fileInput.files[0].name;
       const fileExt = fileName.split('.').pop().toLowerCase();
       const newFileName = 'cropped.' + fileExt;
@@ -681,7 +539,7 @@ class BarangApp {
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       this.fileInput.files = dataTransfer.files;
-    }, 'image/jpeg', 0.95);
+    }, 'image/jpeg', 0.95); // Kualitas 95%
   }
 
   cancelCrop() {
@@ -712,6 +570,7 @@ class BarangApp {
         throw new Error('Semua field harus diisi');
       }
 
+      // Convert image to base64
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -730,13 +589,11 @@ class BarangApp {
           harga: Number(formData.harga),
           satuan: formData.satuan,
           base64
-        }),
-        credentials: 'include'
+        })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Gagal menambahkan barang');
+        throw new Error('Gagal menambahkan barang');
       }
 
       alert('Barang berhasil ditambahkan!');
@@ -756,19 +613,11 @@ class BarangApp {
     try {
       this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
       
-      const response = await fetch('/api/list', {
-        cache: 'no-store',
-        credentials: 'include'
-      });
-      
+      const response = await fetch('/api/list');
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
       
-      if (!Array.isArray(items)) {
-        throw new Error('Data tidak valid');
-      }
-
       if (items.length === 0) {
         this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
         return;
@@ -781,16 +630,16 @@ class BarangApp {
         const escapedSatuan = this.escapeHtml(item.satuan);
         const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
         
-        return \`<div class="bg-white p-3 rounded shadow" data-id="\${escapedId}">
-          <div class="aspect-square overflow-hidden">
-            <img src="\${escapedBase64}" alt="\${escapedNama}" class="w-full h-full object-cover" loading="lazy">
-          </div>
-          <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
-          <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
-          \${this.isAdmin ? 
-            '<button onclick="app.hapusBarang(\'' + escapedId + '\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
-            : ''}
-        </div>\`;
+        return '<div class="bg-white p-3 rounded shadow" data-id="' + escapedId + '">' +
+          '<div class="aspect-square overflow-hidden">' +
+            '<img src="' + escapedBase64 + '" alt="' + escapedNama + '" class="w-full h-full object-cover">' +
+          '</div>' +
+          '<h2 class="text-lg font-semibold mt-2">' + escapedNama + '</h2>' +
+          '<p class="text-sm text-gray-600">Rp ' + hargaFormatted + ' / ' + escapedSatuan + '</p>' +
+          (this.isAdmin ? 
+            '<button onclick="app.hapusBarang(\\'' + escapedId + '\\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
+            : '') +
+        '</div>';
       }).join('');
     } catch (error) {
       console.error('Error:', error);
@@ -800,25 +649,11 @@ class BarangApp {
 
   async hapusBarang(id) {
     try {
-      if (!this.isAdmin) {
-        alert('Anda tidak memiliki izin untuk menghapus barang');
-        return;
-      }
-
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      const response = await fetch('/api/hapus', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Gagal menghapus barang');
-      }
+      const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
+      if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
       await this.loadBarang();
