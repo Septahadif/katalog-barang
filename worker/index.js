@@ -188,19 +188,28 @@ const INDEX_HTML = `<!DOCTYPE html>
     }
     .header-container {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      justify-content: center;
+      align-items: flex-start;
       margin-bottom: 1rem;
       position: relative;
+      flex-direction: column;
     }
     .title-center {
       text-align: center;
-      flex-grow: 1;
+      width: 100%;
+      margin-bottom: 0.5rem;
     }
-    .login-btn {
+    .login-btn-container {
       position: absolute;
       right: 0;
-      transform: scale(0.9);
+      top: 0;
+    }
+    .login-btn {
+      background-color: #4b5563;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
     }
   </style>
 </head>
@@ -208,9 +217,11 @@ const INDEX_HTML = `<!DOCTYPE html>
   <div class="w-full max-w-xl">
     <div class="header-container">
       <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
-      <button id="showLoginBtn" class="bg-gray-600 text-white px-3 py-1 rounded hover:bg-gray-700 transition login-btn">
-        Login Admin
-      </button>
+      <div class="login-btn-container">
+        <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
+          Login Admin
+        </button>
+      </div>
     </div>
     
     <!-- Admin Login Modal -->
@@ -261,7 +272,6 @@ const INDEX_HTML = `<!DOCTYPE html>
         <div>
           <label class="block mb-1 font-medium">Gambar</label>
           <input id="gambar" name="gambar" type="file" accept="image/*" required class="w-full border p-2 rounded">
-          <!-- Preview gambar akan muncul di sini -->
           
           <!-- Image Cropper -->
           <div id="cropperContainer" class="cropper-container mt-2 hidden">
@@ -316,7 +326,9 @@ class BarangApp {
       previewHeight: 0,
       scale: 1,
       minScale: 0.5,
-      maxScale: 3
+      maxScale: 3,
+      lastX: 0,
+      lastY: 0
     };
     
     this.initElements();
@@ -436,9 +448,9 @@ class BarangApp {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validasi tipe file (termasuk AVIF)
+    // Validasi tipe file
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
-    if (!validTypes.includes(file.type) {
+    if (!validTypes.includes(file.type)) {
       alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
       this.fileInput.value = '';
       return;
@@ -453,7 +465,7 @@ class BarangApp {
       this.cropper.image.onload = () => {
         this.cropper.naturalWidth = this.cropper.image.naturalWidth;
         this.cropper.naturalHeight = this.cropper.image.naturalHeight;
-        this.cropper.scale = 1; // Reset scale
+        this.cropper.scale = 1;
         
         // Calculate initial dimensions to fit container
         const containerWidth = this.cropperContainer.offsetWidth;
@@ -467,10 +479,7 @@ class BarangApp {
         this.cropper.previewWidth = this.cropper.naturalWidth * ratio;
         this.cropper.previewHeight = this.cropper.naturalHeight * ratio;
         
-        this.cropperPreview.style.width = this.cropper.previewWidth + 'px';
-        this.cropperPreview.style.height = this.cropper.previewHeight + 'px';
-        
-        // Center the image initially
+        this.updateImagePosition();
         this.centerImage();
       };
       this.cropper.image.src = event.target.result;
@@ -496,34 +505,13 @@ class BarangApp {
       return;
     }
     
-    // Simpan posisi mouse relatif terhadap gambar sebelum zoom
-    const containerRect = this.cropperContainer.getBoundingClientRect();
-    const mouseX = this.cropper.lastX - containerRect.left;
-    const mouseY = this.cropper.lastY - containerRect.top;
-    
-    const imgLeft = parseFloat(this.cropperPreview.style.left) || 0;
-    const imgTop = parseFloat(this.cropperPreview.style.top) || 0;
-    
-    const imgX = mouseX - imgLeft;
-    const imgY = mouseY - imgTop;
-    
-    // Hitung posisi relatif sebelum zoom
-    const relX = imgX / (this.cropper.previewWidth * this.cropper.scale);
-    const relY = imgY / (this.cropper.previewHeight * this.cropper.scale);
-    
-    // Update scale
     this.cropper.scale = newScale;
-    
-    // Hitung offset baru untuk menjaga posisi relatif mouse
-    this.cropper.offsetX = mouseX - (this.cropper.previewWidth * this.cropper.scale * relX);
-    this.cropper.offsetY = mouseY - (this.cropper.previewHeight * this.cropper.scale * relY);
-    
     this.updateImagePosition();
   }
 
   updateImagePosition() {
-    this.cropperPreview.style.width = (this.cropper.previewWidth * this.cropper.scale) + 'px';
-    this.cropperPreview.style.height = (this.cropper.previewHeight * this.cropper.scale) + 'px';
+    this.cropperPreview.style.width = this.cropper.previewWidth + 'px';
+    this.cropperPreview.style.height = this.cropper.previewHeight + 'px';
     this.cropperPreview.style.left = this.cropper.offsetX + 'px';
     this.cropperPreview.style.top = this.cropper.offsetY + 'px';
     this.cropperPreview.style.transform = 'scale(' + this.cropper.scale + ')';
@@ -565,8 +553,7 @@ class BarangApp {
     this.cropper.startX = e.clientX;
     this.cropper.startY = e.clientY;
     
-    this.cropperPreview.style.left = boundedX + 'px';
-    this.cropperPreview.style.top = boundedY + 'px';
+    this.updateImagePosition();
   }
 
   endDrag() {
@@ -602,8 +589,8 @@ class BarangApp {
     // Draw cropped image (1:1 ratio)
     ctx.drawImage(
       this.cropper.image,
-      sx, sy, sWidth, sHeight, // source rectangle
-      0, 0, size, size         // destination rectangle
+      sx, sy, sWidth, sHeight,
+      0, 0, size, size
     );
     
     // Convert to blob and update file input
@@ -677,7 +664,6 @@ class BarangApp {
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
-          // Potong prefix data:image/...;base64, jika sudah ada
           const base64Data = reader.result.split(',')[1] || reader.result;
           resolve('data:image/' + fileExt + ';base64,' + base64Data);
         };
@@ -702,7 +688,6 @@ class BarangApp {
 
       alert('Barang berhasil ditambahkan!');
       this.form.reset();
-      // Hapus preview gambar jika ada
       document.querySelector('.image-preview')?.remove();
       await this.loadBarang();
     } catch (error) {
@@ -782,4 +767,4 @@ class BarangApp {
 // Initialize app
 const app = new BarangApp();
 window.app = app;
-`;
+';
