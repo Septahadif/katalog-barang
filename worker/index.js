@@ -17,6 +17,13 @@ export default {
       });
     }
 
+    // Serve Cropper CSS
+    if (path === "/cropper.css") {
+      return new Response(CROPPER_CSS, {
+        headers: { "Content-Type": "text/css" },
+      });
+    }
+
     // Login Admin
     if (path === "/api/login" && req.method === "POST") {
       const { username, password } = await req.json();
@@ -101,6 +108,8 @@ export default {
   }
 }
 
+const CROPPER_CSS = `/* Cropper.js CSS will be loaded from CDN */`;
+
 const INDEX_HTML = `<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -110,15 +119,63 @@ const INDEX_HTML = `<!DOCTYPE html>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
   <style>
+    .cropper-modal {
+      background-color: white;
+    }
+    .cropper-container {
+      max-height: 400px;
+    }
+    .cropper-crop-box, .cropper-view-box {
+      border-radius: 50%;
+    }
+    .cropper-view-box {
+      box-shadow: 0 0 0 1px #39f;
+      outline: 0;
+    }
+    .cropper-dashed {
+      border: 0 dashed #eee;
+    }
+    .cropper-point {
+      background-color: #39f;
+      width: 10px;
+      height: 10px;
+      opacity: 1;
+    }
+    .cropper-line {
+      background-color: #39f;
+    }
+    .login-modal-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    #adminControls {
+      transition: all 0.3s ease;
+    }
+    .image-preview {
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
     .header-container {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1.5rem;
+      justify-content: center;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+      position: relative;
+      flex-direction: column;
     }
     .title-center {
       text-align: center;
-      flex-grow: 1;
+      width: 100%;
+      margin-bottom: 0.5rem;
+    }
+    .login-btn-container {
+      position: absolute;
+      right: 0;
+      top: 0;
     }
     .login-btn {
       background-color: #4b5563;
@@ -127,126 +184,62 @@ const INDEX_HTML = `<!DOCTYPE html>
       border-radius: 0.375rem;
       font-size: 0.875rem;
     }
-    
-    /* Cropper Styles */
-    .cropper-container { 
-      width: 100%;
-      height: 400px;
-      position: relative;
-      overflow: hidden;
-      border: 2px dashed #ccc;
-      background-color: #f5f5f5;
-      margin-top: 1rem;
-    }
-    .cropper-overlay {
-      position: absolute;
+    #cropModal {
+      display: none;
+      position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: 1fr 1fr 1fr;
-      pointer-events: none;
-    }
-    .cropper-grid-cell { 
-      border: 1px dashed rgba(0,0,0,0.2);
-    }
-    .cropper-controls {
-      position: absolute;
-      bottom: 15px;
-      width: 100%;
-      text-align: center;
-      display: flex;
-      justify-content: center;
-      gap: 15px;
-      z-index: 10;
-    }
-    .zoom-controls {
-      position: absolute;
-      top: 15px;
-      right: 15px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      z-index: 10;
-    }
-    .zoom-btn {
-      width: 36px;
-      height: 36px;
-      background: white;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-      cursor: pointer;
-      border: none;
-      font-weight: bold;
-      font-size: 1.2rem;
-    }
-    
-    /* Modal Styles */
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.5);
-      display: none;
-      align-items: center;
-      justify-content: center;
+      background-color: rgba(0,0,0,0.8);
       z-index: 1000;
+      justify-content: center;
+      align-items: center;
     }
-    .modal-content {
+    #cropModalContent {
       background: white;
-      border-radius: 0.5rem;
-      width: 90%;
-      max-width: 400px;
-      padding: 1.5rem;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 90%;
+      max-height: 90%;
     }
-    
-    /* Loading Indicator */
-    .loading {
-      display: none;
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(255,255,255,0.9);
-      padding: 1.5rem;
-      border-radius: 0.5rem;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-      z-index: 1000;
-      text-align: center;
+    #cropImage {
+      max-width: 100%;
+      max-height: 70vh;
+    }
+    .crop-actions {
+      margin-top: 15px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
     }
   </style>
 </head>
-<body class="bg-gray-100 min-h-screen p-4">
-  <div class="max-w-4xl mx-auto">
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+  <div class="w-full max-w-xl">
     <div class="header-container">
       <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
-      <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
-        Login Admin
-      </button>
+      <div class="login-btn-container">
+        <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
+          Login Admin
+        </button>
+      </div>
     </div>
     
     <!-- Admin Login Modal -->
-    <div id="loginModal" class="modal-overlay">
-      <div class="modal-content">
+    <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white p-6 rounded-lg shadow-lg w-80">
         <h2 class="text-xl font-bold mb-4">Login Admin</h2>
         <form id="loginForm" class="space-y-4">
           <div>
-            <label class="block mb-1 text-sm font-medium">Username</label>
+            <label class="block mb-1">Username</label>
             <input type="text" id="loginUsername" class="w-full border p-2 rounded" required>
           </div>
           <div>
-            <label class="block mb-1 text-sm font-medium">Password</label>
+            <label class="block mb-1">Password</label>
             <input type="password" id="loginPassword" class="w-full border p-2 rounded" required>
           </div>
-          <div class="flex gap-3">
+          <div class="login-modal-buttons">
             <button type="button" id="cancelLoginBtn" class="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
               Batal
             </button>
@@ -258,6 +251,22 @@ const INDEX_HTML = `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Crop Modal -->
+    <div id="cropModal">
+      <div id="cropModalContent">
+        <h3 class="text-lg font-bold mb-3">Crop Gambar</h3>
+        <img id="cropImage">
+        <div class="crop-actions">
+          <button id="cancelCrop" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
+            Batal
+          </button>
+          <button id="saveCrop" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+            Simpan
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Admin Controls -->
     <div id="adminControls" class="hidden mb-6">
       <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
@@ -265,7 +274,7 @@ const INDEX_HTML = `<!DOCTYPE html>
       </button>
       
       <!-- Form Tambah Barang -->
-      <form id="formBarang" class="bg-white p-4 rounded-lg shadow space-y-4 mb-6">
+      <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
         <div>
           <label class="block mb-1 font-medium">Nama Barang</label>
           <input id="nama" name="nama" type="text" required class="w-full border p-2 rounded">
@@ -276,41 +285,13 @@ const INDEX_HTML = `<!DOCTYPE html>
         </div>
         <div>
           <label class="block mb-1 font-medium">Satuan</label>
-          <select id="satuan" class="w-full border p-2 rounded">
-            <option value="pcs">pcs</option>
-            <option value="lusin">lusin</option>
-            <option value="pak">pak</option>
-            <option value="rol">rol</option>
-            <option value="bal">bal</option>
-            <option value="karton">karton</option>
-            <option value="gros">gros</option>
-            <option value="toples">toples</option>
-          </select>
+          <input id="satuan" name="satuan" type="text" required class="w-full border p-2 rounded">
         </div>
         <div>
           <label class="block mb-1 font-medium">Gambar</label>
           <input id="gambar" name="gambar" type="file" accept="image/*" required class="w-full border p-2 rounded">
-          
-          <!-- Image Cropper -->
-          <div id="cropperContainer" class="cropper-container mt-2 hidden">
-            <div class="zoom-controls">
-              <button class="zoom-btn" id="zoomIn">+</button>
-              <button class="zoom-btn" id="zoomOut">-</button>
-            </div>
-            <img id="cropperPreview">
-            <div class="cropper-overlay">
-              <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
-              <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
-              <div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div><div class="cropper-grid-cell"></div>
-            </div>
-            <div class="cropper-controls">
-              <button type="button" id="cropCancel" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
-                Batal
-              </button>
-              <button type="button" id="cropConfirm" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
-                Simpan
-              </button>
-            </div>
+          <div id="imagePreviewContainer" class="mt-2 hidden">
+            <img id="imagePreview" class="image-preview">
           </div>
         </div>
         <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition w-full">
@@ -320,13 +301,7 @@ const INDEX_HTML = `<!DOCTYPE html>
     </div>
 
     <!-- Katalog -->
-    <div id="katalog" class="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"></div>
-  </div>
-
-  <!-- Loading Indicator -->
-  <div id="loading" class="loading">
-    <img src="https://i.gifer.com/ZZ5H.gif" alt="Loading" width="50">
-    <p>Menyimpan barang...</p>
+    <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
@@ -339,7 +314,7 @@ class BarangApp {
   constructor() {
     this.isAdmin = false;
     this.cropper = null;
-    this.cropImageBlob = null;
+    this.croppedImageBlob = null;
     
     this.initElements();
     this.initEventListeners();
@@ -356,37 +331,33 @@ class BarangApp {
     this.logoutBtn = document.getElementById('logoutBtn');
     this.showLoginBtn = document.getElementById('showLoginBtn');
     this.cancelLoginBtn = document.getElementById('cancelLoginBtn');
-    this.cropperContainer = document.getElementById('cropperContainer');
-    this.cropperPreview = document.getElementById('cropperPreview');
-    this.cropConfirm = document.getElementById('cropConfirm');
-    this.cropCancel = document.getElementById('cropCancel');
     this.fileInput = document.getElementById('gambar');
-    this.zoomInBtn = document.getElementById('zoomIn');
-    this.zoomOutBtn = document.getElementById('zoomOut');
-    this.loadingIndicator = document.getElementById('loading');
+    this.imagePreview = document.getElementById('imagePreview');
+    this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
+    this.cropModal = document.getElementById('cropModal');
+    this.cropImage = document.getElementById('cropImage');
+    this.saveCropBtn = document.getElementById('saveCrop');
+    this.cancelCropBtn = document.getElementById('cancelCrop');
   }
 
   initEventListeners() {
-    // Login modal handlers
-    this.showLoginBtn.addEventListener('click', () => {
-      this.loginModal.style.display = 'flex';
-    });
-    
-    this.cancelLoginBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.loginModal.style.display = 'none';
-    });
-    
-    this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
-    
-    // Other form handlers
     this.form.addEventListener('submit', (e) => this.handleSubmit(e));
+    this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
     this.logoutBtn.addEventListener('click', () => this.handleLogout());
+    this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
+    this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
-    this.cropConfirm.addEventListener('click', () => this.applyCrop());
-    this.cropCancel.addEventListener('click', () => this.cancelCrop());
-    this.zoomInBtn.addEventListener('click', () => this.zoom(1.2));
-    this.zoomOutBtn.addEventListener('click', () => this.zoom(0.8));
+    this.saveCropBtn.addEventListener('click', () => this.saveCrop());
+    this.cancelCropBtn.addEventListener('click', () => this.cancelCrop());
+  }
+
+  showLoginModal() {
+    this.loginModal.classList.remove('hidden');
+    document.getElementById('loginUsername').focus();
+  }
+
+  cancelLogin() {
+    this.loginModal.classList.add('hidden');
   }
 
   async checkAdminStatus() {
@@ -406,7 +377,7 @@ class BarangApp {
       this.showLoginBtn.classList.add('hidden');
     } else {
       this.adminControls.classList.add('hidden');
-      this.loginModal.style.display = 'none';
+      this.loginModal.classList.add('hidden');
       this.showLoginBtn.classList.remove('hidden');
     }
   }
@@ -426,7 +397,7 @@ class BarangApp {
       if (response.ok) {
         this.isAdmin = true;
         this.toggleAdminUI();
-        this.loginModal.style.display = 'none';
+        this.loginModal.classList.add('hidden');
         this.loadBarang();
       } else {
         alert('Login gagal! Periksa username dan password');
@@ -462,78 +433,77 @@ class BarangApp {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      this.cropperPreview.src = event.target.result;
-      this.cropperContainer.classList.remove('hidden');
+      this.cropImage.src = event.target.result;
+      this.cropModal.style.display = 'flex';
       
       // Inisialisasi Cropper.js
       if (this.cropper) {
         this.cropper.destroy();
       }
       
-      this.cropper = new Cropper(this.cropperPreview, {
-        aspectRatio: 1,
-        viewMode: 1,
-        dragMode: 'move',
-        autoCropArea: 0.8,
+      this.cropper = new Cropper(this.cropImage, {
+        aspectRatio: 1,  // Rasio 1:1 (persegi)
+        viewMode: 1,     // Mode view
+        autoCropArea: 1, // Area crop otomatis penuh
         responsive: true,
-        zoomable: true,
+        guides: false,
+        center: false,
+        highlight: false,
         cropBoxMovable: true,
         cropBoxResizable: true,
-        minContainerWidth: 300,
-        minContainerHeight: 300
+        toggleDragModeOnDblclick: false
       });
     };
     reader.readAsDataURL(file);
   }
 
-  zoom(factor) {
-    if (!this.cropper) return;
-    
-    if (factor > 1) {
-      this.cropper.zoom(factor - 1);
-    } else {
-      this.cropper.zoom(-(1 - factor));
-    }
-  }
-
-  applyCrop() {
-    if (!this.cropper) return;
-    
-    // Dapatkan canvas yang sudah di-crop dengan kualitas HD
+  saveCrop() {
+    // Dapatkan canvas hasil crop
     const canvas = this.cropper.getCroppedCanvas({
-      width: 1200,
-      height: 1200,
-      minWidth: 800,
-      minHeight: 800,
-      maxWidth: 2000,
-      maxHeight: 2000,
+      width: 500,
+      height: 500,
+      minWidth: 256,
+      minHeight: 256,
+      maxWidth: 1024,
+      maxHeight: 1024,
       fillColor: '#fff',
       imageSmoothingEnabled: true,
-      imageSmoothingQuality: 'high'
+      imageSmoothingQuality: 'high',
     });
-    
-    // Konversi ke blob dengan kualitas tinggi
+
+    // Konversi ke blob
     canvas.toBlob((blob) => {
-      this.cropImageBlob = blob;
+      this.croppedImageBlob = blob;
       
-      // Preview hasil crop
+      // Tampilkan preview
       const previewUrl = URL.createObjectURL(blob);
-      const preview = document.createElement('img');
-      preview.src = previewUrl;
-      preview.className = 'w-full mt-4 rounded border image-preview';
-      this.form.querySelector('.image-preview')?.remove();
-      this.form.querySelector('#gambar').after(preview);
+      this.imagePreview.src = previewUrl;
+      this.imagePreviewContainer.classList.remove('hidden');
       
-      this.cancelCrop();
-    }, 'image/jpeg', 0.95); // Kualitas 95% untuk hasil terbaik
+      // Tutup modal crop
+      this.cropModal.style.display = 'none';
+      this.cropper.destroy();
+      this.cropper = null;
+      
+      // Update file input dengan file yang sudah di-crop
+      const fileName = this.fileInput.files[0].name;
+      const fileExt = fileName.split('.').pop().toLowerCase();
+      const newFileName = 'cropped.' + fileExt;
+      
+      const file = new File([blob], newFileName, { type: blob.type });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      this.fileInput.files = dataTransfer.files;
+    }, 'image/jpeg', 0.9); // Kualitas 90%
   }
 
   cancelCrop() {
-    this.cropperContainer.classList.add('hidden');
+    this.cropModal.style.display = 'none';
     if (this.cropper) {
       this.cropper.destroy();
       this.cropper = null;
     }
+    this.fileInput.value = '';
   }
 
   async handleSubmit(e) {
@@ -543,23 +513,25 @@ class BarangApp {
     try {
       submitBtn.disabled = true;
       submitBtn.textContent = 'Memproses...';
-      this.loadingIndicator.style.display = 'block';
 
       const formData = {
         nama: this.form.nama.value.trim(),
         harga: this.form.harga.value.trim(),
         satuan: this.form.satuan.value.trim(),
-        gambar: this.cropImageBlob
+        gambar: this.form.gambar.files[0]
       };
 
       if (!formData.nama || !formData.harga || !formData.satuan || !formData.gambar) {
         throw new Error('Semua field harus diisi');
       }
 
-      // Convert image to base64 dengan kualitas tinggi
+      // Convert image to base64
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
+        reader.onload = () => {
+          const base64Data = reader.result.split(',')[1] || reader.result;
+          resolve('data:image/jpeg;base64,' + base64Data);
+        };
         reader.onerror = reject;
         reader.readAsDataURL(formData.gambar);
       });
@@ -581,7 +553,7 @@ class BarangApp {
 
       alert('Barang berhasil ditambahkan!');
       this.form.reset();
-      document.querySelector('.image-preview')?.remove();
+      this.imagePreviewContainer.classList.add('hidden');
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
@@ -589,13 +561,12 @@ class BarangApp {
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Tambah Barang';
-      this.loadingIndicator.style.display = 'none';
     }
   }
 
   async loadBarang() {
     try {
-      this.katalog.innerHTML = '<div class="text-center py-8"><p class="text-gray-500">Memuat data katalog...</p></div>';
+      this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
       
       const response = await fetch('/api/list');
       if (!response.ok) throw new Error('Gagal memuat data');
@@ -603,7 +574,7 @@ class BarangApp {
       const items = await response.json();
       
       if (items.length === 0) {
-        this.katalog.innerHTML = '<div class="text-center py-8"><p class="text-gray-500">Belum ada barang.</p></div>';
+        this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
         return;
       }
 
@@ -614,23 +585,20 @@ class BarangApp {
         const escapedSatuan = this.escapeHtml(item.satuan);
         const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
         
-        return \`
-          <div class="bg-white rounded-lg shadow overflow-hidden">
-            <img src="\${escapedBase64}" alt="\${escapedNama}" class="w-full h-48 object-cover">
-            <div class="p-4">
-              <h3 class="font-bold text-lg">\${escapedNama}</h3>
-              <p class="text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
-              \${this.isAdmin ? 
-                \`<button onclick="app.hapusBarang('\${escapedId}')" class="mt-3 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700">
-                  Hapus
-                </button>\` : ''}
-            </div>
-          </div>
-        \`;
+        return '<div class="bg-white p-3 rounded shadow" data-id="' + escapedId + '">' +
+          '<div class="aspect-square overflow-hidden">' +
+            '<img src="' + escapedBase64 + '" alt="' + escapedNama + '" class="w-full h-full object-cover">' +
+          '</div>' +
+          '<h2 class="text-lg font-semibold mt-2">' + escapedNama + '</h2>' +
+          '<p class="text-sm text-gray-600">Rp ' + hargaFormatted + ' / ' + escapedSatuan + '</p>' +
+          (this.isAdmin ? 
+            '<button onclick="app.hapusBarang(\\'' + escapedId + '\\')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>' 
+            : '') +
+        '</div>';
       }).join('');
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = '<div class="text-center py-8 text-red-500"><p>Gagal memuat data: ' + this.escapeHtml(error.message) + '</p></div>';
+      this.katalog.innerHTML = '<div class="text-center py-4 text-red-500"><p>Gagal memuat data: ' + this.escapeHtml(error.message) + '</p></div>';
     }
   }
 
