@@ -512,7 +512,7 @@ class BarangApp {
     const mimeType = this.getMimeType(fileExt);
     
     canvas.toBlob((blob) => {
-      const fileName = `cropped.${fileExt}`;
+      const fileName = 'cropped.' + fileExt;
       const file = new File([blob], fileName, { type: mimeType });
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
@@ -577,7 +577,7 @@ class BarangApp {
         reader.onload = () => {
           // Potong prefix data:image/...;base64, jika sudah ada
           const base64Data = reader.result.split(',')[1] || reader.result;
-          resolve(`data:image/${fileExt};base64,${base64Data}`);
+          resolve('data:image/' + fileExt + ';base64,' + base64Data);
         };
         reader.onerror = reject;
         reader.readAsDataURL(formData.gambar);
