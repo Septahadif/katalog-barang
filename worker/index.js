@@ -25,20 +25,20 @@ export default {
     }
 
     // Login Admin
-if (path === "/api/login" && req.method === "POST") {
-  const { username, password } = await req.json();
-  const isAdmin = username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD;
-  
-  if (isAdmin) {
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 
-        "Content-Type": "application/json",
-        "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
+    if (path === "/api/login" && req.method === "POST") {
+      const { username, password } = await req.json();
+      const isAdmin = username === "septa" && password === "septa2n2n";
+      
+      if (isAdmin) {
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 
+            "Content-Type": "application/json",
+            "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
+          }
+        });
       }
-    });
-  }
-  return new Response(JSON.stringify({ success: false }), { status: 401 });
-}
+      return new Response(JSON.stringify({ success: false }), { status: 401 });
+    }
 
     // Check Admin Status
     if (path === "/api/check-admin") {
@@ -229,7 +229,7 @@ const INDEX_HTML = `<!DOCTYPE html>
       <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
       <div class="login-btn-container">
         <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
-          Login Admin
+          Login
         </button>
       </div>
     </div>
