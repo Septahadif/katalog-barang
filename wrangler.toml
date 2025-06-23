@@ -1,8 +1,8 @@
 name = "katalog-barang"
 type = "javascript"
-account_id = ""
 workers_dev = true
 compatibility_date = "2025-06-23"
+main = "worker/index.js"
 
 [[kv_namespaces]]
 binding = "KATALOG"
