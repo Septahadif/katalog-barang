@@ -129,7 +129,12 @@ const INDEX_HTML = `<!DOCTYPE html>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
   <div class="w-full max-w-xl">
-    <h1 class="text-2xl font-bold mb-4 text-center">📦 Katalog Barang</h1>
+    <div class="flex justify-between items-center mb-4">
+      <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
+      <button id="showLoginBtn" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
+        Login Admin
+      </button>
+    </div>
     
     <!-- Admin Login Modal -->
     <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -223,6 +228,7 @@ class BarangApp {
     this.loginModal = document.getElementById('loginModal');
     this.loginForm = document.getElementById('loginForm');
     this.logoutBtn = document.getElementById('logoutBtn');
+    this.showLoginBtn = document.getElementById('showLoginBtn');
     this.cropperContainer = document.getElementById('cropperContainer');
     this.cropperPreview = document.getElementById('cropperPreview');
     this.cropConfirm = document.getElementById('cropConfirm');
@@ -234,6 +240,7 @@ class BarangApp {
     this.form.addEventListener('submit', (e) => this.handleSubmit(e));
     this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
     this.logoutBtn.addEventListener('click', () => this.handleLogout());
+    this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
     this.cropConfirm.addEventListener('click', () => this.applyCrop());
     this.cropCancel.addEventListener('click', () => this.cancelCrop());
@@ -242,6 +249,10 @@ class BarangApp {
     this.cropperPreview.addEventListener('mousedown', (e) => this.startDrag(e));
     document.addEventListener('mousemove', (e) => this.drag(e));
     document.addEventListener('mouseup', () => this.endDrag());
+  }
+
+  showLoginModal() {
+    this.loginModal.classList.remove('hidden');
   }
 
   async checkAdminStatus() {
@@ -258,9 +269,11 @@ class BarangApp {
   toggleAdminUI() {
     if (this.isAdmin) {
       this.adminControls.classList.remove('hidden');
+      this.showLoginBtn.classList.add('hidden');
     } else {
       this.adminControls.classList.add('hidden');
       this.loginModal.classList.add('hidden');
+      this.showLoginBtn.classList.remove('hidden');
     }
   }
 
@@ -331,7 +344,6 @@ class BarangApp {
     const dx = e.clientX - this.cropper.startX;
     const dy = e.clientY - this.cropper.startY;
     
-    // Fixed: Changed template literal to string concatenation
     this.cropperPreview.style.left = (this.cropper.offsetX + dx) + 'px';
     this.cropperPreview.style.top = (this.cropper.offsetY + dy) + 'px';
   }
@@ -505,12 +517,3 @@ class BarangApp {
 // Initialize app
 const app = new BarangApp();
 window.app = app;
-
-// Show login modal if not admin
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    if (!app.isAdmin) {
-      document.getElementById('loginModal').classList.remove('hidden');
-    }
-  }, 1000);
-});`;
