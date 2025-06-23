@@ -43,7 +43,7 @@ export default {
       return new Response(imageBuffer, {
         headers: { 
           "Content-Type": "image/jpeg",
-          "Cache-Control": "public, max-age=86400" // Cache for 1 day
+          "Cache-Control": "public, max-age=31536000" // Cache for 1 year
         }
       });
     }
@@ -86,7 +86,10 @@ export default {
     if (path === "/api/list") {
       const data = await env.KATALOG.get("items");
       return new Response(data || "[]", {
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache" // Prevent caching of item list
+        },
       });
     }
 
@@ -103,7 +106,7 @@ export default {
       const item = { 
         ...body, 
         id: Date.now().toString(),
-        timestamp: new Date().toISOString()
+        timestamp: Date.now()
       };
       items.push(item);
 
@@ -262,6 +265,31 @@ const INDEX_HTML = `<!DOCTYPE html>
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
+    }
+
+    /* Image container */
+    .image-container {
+      position: relative;
+      width: 100%;
+      height: 0;
+      padding-bottom: 100%;
+      overflow: hidden;
+      background-color: #f3f4f6;
+    }
+    .image-container img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: opacity 0.3s ease;
+    }
+    .image-container img.loading {
+      opacity: 0;
+    }
+    .image-container img.loaded {
+      opacity: 1;
     }
   </style>
 </head>
@@ -656,7 +684,7 @@ class BarangApp {
     try {
       this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Memuat data...</p></div>';
       
-      const response = await fetch('/api/list');
+      const response = await fetch('/api/list?t=' + Date.now()); // Add timestamp to prevent caching
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
@@ -666,7 +694,7 @@ class BarangApp {
         return;
       }
 
-      // Render item list without images first
+      // Render item list with image placeholders
       this.katalog.innerHTML = items.map(item => {
         const escapedId = this.escapeHtml(item.id);
         const escapedNama = this.escapeHtml(item.nama);
@@ -674,8 +702,14 @@ class BarangApp {
         const hargaFormatted = Number(item.harga).toLocaleString('id-ID');
         
         return \`<div class="bg-white p-3 rounded shadow" data-id="\${escapedId}">
-          <div class="aspect-square overflow-hidden bg-gray-100 flex items-center justify-center">
-            <div class="loading-spinner"></div>
+          <div class="image-container">
+            <img 
+              src="/api/image/\${escapedId}?t=\${item.timestamp || Date.now()}" 
+              alt="\${escapedNama}" 
+              class="loading" 
+              loading="lazy"
+              onload="this.classList.remove('loading'); this.classList.add('loaded')"
+            >
           </div>
           <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
           <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
@@ -685,38 +719,9 @@ class BarangApp {
         </div>\`;
       }).join('');
 
-      // Load images for each item
-      items.forEach(item => {
-        this.loadItemImage(item.id);
-      });
     } catch (error) {
       console.error('Error:', error);
       this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
-    }
-  }
-
-  async loadItemImage(id) {
-    try {
-      const imgElement = document.querySelector(\`[data-id="\${id}"] img\`);
-      if (!imgElement) return;
-
-      const response = await fetch(\`/api/image/\${id}\`);
-      if (!response.ok) throw new Error('Gagal memuat gambar');
-      
-      const blob = await response.blob();
-      const imageUrl = URL.createObjectURL(blob);
-      
-      // Replace loading spinner with actual image
-      const container = document.querySelector(\`[data-id="\${id}"] div\`);
-      if (container) {
-        container.innerHTML = \`<img src="\${imageUrl}" alt="Barang \${id}" class="w-full h-full object-cover" loading="lazy">\`;
-      }
-    } catch (error) {
-      console.error(\`Error loading image for item \${id}:\`, error);
-      const container = document.querySelector(\`[data-id="\${id}"] div\`);
-      if (container) {
-        container.innerHTML = '<p class="text-gray-500 text-sm">Gambar tidak tersedia</p>';
-      }
     }
   }
 
