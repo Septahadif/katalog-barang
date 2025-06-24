@@ -315,22 +315,27 @@ const INDEX_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-  <div class="w-full max-w-2xl">  <!-- Lebarkan container -->
-  <!-- Tombol Login (Kanan) -->
-  <div class="flex justify-end mb-4">  <!-- Tambahkan mb-4 -->
-    <button id="showLoginBtn" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
-      Login
-    </button>
-  </div>
+  <div class="w-full max-w-2xl relative">
+  <!-- Tombol Login (Pojok Kanan Atas) -->
+  <button id="showLoginBtn" 
+          class="absolute top-0 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
+    Login
+  </button>
 
-  <!-- Judul (Tengah) -->
-  <div class="text-center mb-10">  <!-- Tambahkan mb-10 -->
+  <!-- Judul Katalog (Tengah) -->
+  <div class="text-center mb-6 pt-10">  <!-- pt-10 untuk ruang tombol login -->
     <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
   </div>
 
-  <!-- Katalog -->
-  <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2">  <!-- Pastikan gap-4 ada -->
+  <!-- Admin Controls (Form Input) -->
+  <div id="adminControls" class="hidden mb-8">
+    <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-8">
+      <!-- ... (isi form) ... -->
+    </form>
   </div>
+
+  <!-- Katalog Barang -->
+  <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
 </div>
     
     <!-- Admin Login Modal -->
