@@ -192,6 +192,23 @@ const INDEX_HTML = `<!DOCTYPE html>
       background-color: white;
       display: block;
     }
+    .header-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 1rem;
+      position: relative;
+    }
+    .title-center {
+      text-align: center;
+      width: 100%;
+      margin-bottom: 0.5rem;
+    }
+    .login-btn-container {
+      position: absolute;
+      top: 0;
+      right: 0;
+    }
     .login-btn {
       background-color: #4b5563;
       color: white;
@@ -301,15 +318,14 @@ const INDEX_HTML = `<!DOCTYPE html>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
   <div class="w-full max-w-xl">
-  <div class="flex justify-end mb-2">
-    <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
-      Login
-    </button>
-  </div>
-  
-  <!-- Judul tetap di bawah tombol login -->
-  <h1 class="text-2xl font-bold text-center mb-4">📦 Katalog Barang</h1>
-</div>
+    <div class="header-container">
+      <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
+      <div class="login-btn-container">
+        <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
+          Login
+        </button>
+      </div>
+    </div>
     
     <!-- Admin Login Modal -->
     <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
