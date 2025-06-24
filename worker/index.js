@@ -316,12 +316,14 @@ const INDEX_HTML = `<!DOCTYPE html>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
   <div class="w-full max-w-xl">
-    <div class="header-container">
-      <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
-      <div class="login-btn-container">
-        <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
-          Login
-        </button>
+    <button id="showLoginBtn" 
+          class="absolute top-0 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
+    Login
+  </button>
+
+  <!-- Judul Katalog (Tetap di Tengah) -->
+  <div class="text-center mb-6 pt-10"> <!-- Tambahkan pt-10 untuk memberi ruang tombol login -->
+    <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
       </div>
     </div>
     
@@ -451,8 +453,6 @@ class BarangApp {
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
     this.saveCropBtn.addEventListener('click', () => this.saveCrop());
     this.cancelCropBtn.addEventListener('click', () => this.cancelCrop());
-    this.form.nama.addEventListener('input', (e) => this.formatToTitleCase(e));
-    this.form.satuan.addEventListener('input', (e) => this.formatToTitleCase(e));
   }
 
   showLoginModal() {
@@ -485,21 +485,6 @@ class BarangApp {
       this.showLoginBtn.classList.remove('hidden');
     }
   }
-  
-  formatToTitleCase(e) {
-  const input = e.target;
-  const value = input.value;
-  
-  if (value.length === 0) return;
-  
-  // Format ke Title Case (huruf pertama setiap kata besar)
-  const formatted = value.toLowerCase()
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-  
-  input.value = formatted;
-}
 
   async handleLogin(e) {
     e.preventDefault();
