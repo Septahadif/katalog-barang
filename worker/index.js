@@ -215,43 +215,79 @@ const INDEX_HTML = `<!DOCTYPE html>
       font-size: 0.875rem;
     }
     
-    /* Crop Modal Styles */
-    #cropModal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0,0,0,0.8);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-    }
-    #cropModalContent {
-      background: white;
-      padding: 20px;
-      padding-bottom: 80px;
-      border-radius: 8px;
-      max-width: 95%;
-      max-height: 90vh;
-      position: relative;
-    }
-    #cropImage {
-      max-width: 100%;
-      max-height: 70vh;
-      display: block;
-      background-color: white;
-    }
-    .crop-actions {
-      position: absolute;
-      bottom: 20px;
-      left: 0;
-      right: 0;
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-    }
+   /* Crop Modal Styles Responsif */
+#cropModal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.8);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+#cropModalContent {
+  background: white;
+  padding: 20px;
+  padding-bottom: 80px;
+  border-radius: 8px;
+  width: 95%;
+  max-width: 800px; /* Maksimum untuk desktop */
+  max-height: 90vh;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+#cropImage {
+  max-width: 100%;
+  max-height: 60vh;
+  display: block;
+  background-color: white;
+}
+
+.crop-actions {
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+@media (max-width: 768px) {
+  #cropModalContent {
+    padding: 15px;
+    padding-bottom: 70px;
+    width: 98%;
+  }
+  
+  #cropImage {
+    max-height: 50vh;
+  }
+}
+
+@media (max-width: 480px) {
+  #cropModalContent {
+    padding: 10px;
+    padding-bottom: 60px;
+  }
+  
+  .crop-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .crop-actions button {
+    width: 90%;
+  }
+}
 
     /* Loading states */
     .skeleton-item {
@@ -526,7 +562,6 @@ handleFileSelect(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  // Validasi tipe file
   const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
   if (!validTypes.includes(file.type)) {
     alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
@@ -536,7 +571,6 @@ handleFileSelect(e) {
 
   const reader = new FileReader();
   reader.onload = (event) => {
-    // Buat gambar baru untuk memastikan load sempurna
     const img = new Image();
     img.src = event.target.result;
     
@@ -544,48 +578,54 @@ handleFileSelect(e) {
       this.cropImage.src = img.src;
       this.cropModal.style.display = 'flex';
       
-      // Hancurkan cropper lama jika ada
       if (this.cropper) {
         this.cropper.destroy();
       }
       
-      // Inisialisasi Cropper.js dengan pengaturan baru
-      this.cropper = new Cropper(this.cropImage, {
+      // Deteksi perangkat
+      const isMobile = window.matchMedia("(max-width: 768px)").matches;
+      const isTablet = window.matchMedia("(min-width: 769px) and (max-width: 1024px)").matches;
+      
+      // Sesuaikan pengaturan berdasarkan perangkat
+      const cropperOptions = {
         aspectRatio: 1,
         viewMode: 1,
-        autoCropArea: 0.8,
+        autoCropArea: isMobile ? 0.7 : 0.8,
         responsive: true,
         guides: false,
-        center: false,
+        center: true,
         highlight: false,
         cropBoxMovable: true,
         cropBoxResizable: true,
         dragMode: 'move',
         toggleDragModeOnDblclick: false,
-        background: false, // Changed to false to remove extra transparent area
-        modal: true, // Changed to true to contain within crop area
-        minContainerWidth: 400,
-        minContainerHeight: 400,
+        background: false,
+        modal: true,
         ready: () => {
-          // Atur zoom awal untuk mengisi area crop
-          this.cropper.zoomTo(1.0);
-          
-          // Atur ukuran crop box yang lebih ketat
           const containerData = this.cropper.getContainerData();
-          const cropBoxWidth = Math.min(containerData.width, containerData.height) * 0.8;
+          let cropBoxSize;
+          
+          if (isMobile) {
+            cropBoxSize = Math.min(containerData.width, containerData.height) * 0.9;
+            this.cropper.zoomTo(0.8);
+          } else if (isTablet) {
+            cropBoxSize = Math.min(containerData.width, containerData.height) * 0.8;
+            this.cropper.zoomTo(0.9);
+          } else {
+            cropBoxSize = Math.min(containerData.width, containerData.height) * 0.7;
+            this.cropper.zoomTo(1.0);
+          }
           
           this.cropper.setCropBoxData({
-            width: cropBoxWidth,
-            height: cropBoxWidth
-          });
-          
-          // Pusatkan crop box
-          this.cropper.setCropBoxData({
-            left: (containerData.width - cropBoxWidth) / 2,
-            top: (containerData.height - cropBoxWidth) / 2
+            width: cropBoxSize,
+            height: cropBoxSize,
+            left: (containerData.width - cropBoxSize) / 2,
+            top: (containerData.height - cropBoxSize) / 2
           });
         }
-      });
+      };
+      
+      this.cropper = new Cropper(this.cropImage, cropperOptions);
     };
     
     img.onerror = () => {
