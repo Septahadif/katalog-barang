@@ -192,21 +192,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       background-color: white;
       display: block;
     }
-    .header-container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-bottom: 1rem;
-      flex-direction: column;
-    }
-    .title-center {
-      text-align: center;
-      width: 100%;
-      margin-bottom: 0.5rem;
-    }
-    .login-btn-container {
-      margin-top: 10px;
-    }
     .login-btn {
       background-color: #4b5563;
       color: white;
@@ -315,32 +300,16 @@ const INDEX_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-<div class="w-full max-w-4xl mx-auto relative">
-  <!-- Header Section -->
-  <div class="relative mb-8 h-20">
-    <button id="showLoginBtn" 
-            class="absolute top-0 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition z-20">
+  <div class="w-full max-w-xl">
+  <div class="flex justify-end mb-2">
+    <button id="showLoginBtn" class="login-btn hover:bg-gray-700 transition">
       Login
     </button>
-    
-    <div class="pt-16 text-center">
-      <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
-    </div>
   </div>
-
-  <!-- Admin Controls - HILANGKAN CLASS HIDDEN DEFAULT -->
-  <div id="adminControls" class="mb-8"> <!-- Class hidden dihapus -->
-    <form id="formBarang" class="bg-white p-6 rounded-lg shadow-md space-y-4">
-      <!-- Isi form -->
-    </form>
-  </div>
-
-  <div id="katalog" class="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 w-full">
-    <!-- Item katalog -->
-  </div>
+  
+  <!-- Judul tetap di bawah tombol login -->
+  <h1 class="text-2xl font-bold text-center mb-4">📦 Katalog Barang</h1>
 </div>
-
-<!-- Modal Login (tetap sama) -->
     
     <!-- Admin Login Modal -->
     <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -439,7 +408,6 @@ class BarangApp {
     this.initEventListeners();
     this.checkAdminStatus();
     this.loadBarang();
-    this.toggleAdminUI();
   }
 
   initElements() {
@@ -497,6 +465,7 @@ class BarangApp {
       this.showLoginBtn.classList.add('hidden');
     } else {
       this.adminControls.classList.add('hidden');
+      this.loginModal.classList.add('hidden');
       this.showLoginBtn.classList.remove('hidden');
     }
   }
