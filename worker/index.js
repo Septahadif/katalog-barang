@@ -315,21 +315,21 @@ const INDEX_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-  <div class="w-full max-w-xl relative"> <!-- Tambahkan 'relative' di sini -->
-  <!-- Tombol Login (Posisi Absolute di Kanan Atas) -->
-  <button id="showLoginBtn" 
-          class="absolute top-0 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
-    Login
-  </button>
+  <div class="w-full max-w-xl">
+  <!-- Baris Pertama: Hanya Tombol Login (Di Kanan) -->
+  <div class="flex justify-end mb-2"> <!-- justify-end untuk posisi kanan -->
+    <button id="showLoginBtn" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
+      Login
+    </button>
+  </div>
 
-  <!-- Judul Katalog (Tetap di Tengah) -->
-  <div class="text-center mb-6 pt-10"> <!-- Tambahkan pt-10 untuk memberi ruang tombol login -->
+  <!-- Baris Kedua: Judul Katalog (Tengah) -->
+  <div class="text-center mb-6">
     <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
   </div>
 
   <!-- ... (kode adminControls, form, dan katalog tetap sama) ... -->
 </div>
-    </div>
     
     <!-- Admin Login Modal -->
     <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
