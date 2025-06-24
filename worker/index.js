@@ -219,46 +219,48 @@ const INDEX_HTML = `<!DOCTYPE html>
 #cropModal {
   display: none;
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0,0,0,0.8);
-  z-index: 1000;
+  inset: 0;
+  background-color: rgba(0,0,0,0.85);
+  z-index: 10000;
+  display: flex;
   justify-content: center;
   align-items: center;
-  padding: 10px;
+  padding: 15px;
   box-sizing: border-box;
 }
 
 #cropModalContent {
-  background: white;
-  padding: 20px;
-  padding-bottom: 80px;
-  border-radius: 8px;
-  width: 95%;
-  max-width: 800px; /* Maksimum untuk desktop */
+  background: #fff;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 400px;
   max-height: 90vh;
-  position: relative;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 #cropImage {
-  max-width: 100%;
+  width: 100%;
+  height: auto;
   max-height: 60vh;
-  display: block;
+  object-fit: contain;
   background-color: white;
 }
 
 .crop-actions {
-  position: absolute;
-  bottom: 20px;
-  left: 0;
-  right: 0;
   display: flex;
-  justify-content: center;
-  gap: 10px;
+  justify-content: space-around;
+  padding: 12px;
+  border-top: 1px solid #ddd;
+}
+
+.crop-actions button {
+  flex: 1;
+  margin: 0 8px;
+  padding: 12px 0;
+  font-size: 1rem;
+  border-radius: 6px;
 }
 
 @media (max-width: 768px) {
@@ -587,42 +589,31 @@ handleFileSelect(e) {
       
       // Inisialisasi Cropper.js dengan pengaturan baru
       this.cropper = new Cropper(this.cropImage, {
-        aspectRatio: 1,
-        viewMode: 1,
-        autoCropArea: 0.8,
-        responsive: true,
-        guides: false,
-        center: false,
-        highlight: false,
-        cropBoxMovable: true,
-        cropBoxResizable: true,
-        dragMode: 'move',
-        toggleDragModeOnDblclick: false,
-        background: false, // Changed to false to remove extra transparent area
-        modal: true, // Changed to true to contain within crop area
-        minContainerWidth: 400,
-        minContainerHeight: 400,
-        ready: () => {
-          // Atur zoom awal untuk mengisi area crop
-          this.cropper.zoomTo(1.0);
-          
-          // Atur ukuran crop box yang lebih ketat
-          const containerData = this.cropper.getContainerData();
-          const cropBoxWidth = Math.min(containerData.width, containerData.height) * 0.8;
-          
-          this.cropper.setCropBoxData({
-            width: cropBoxWidth,
-            height: cropBoxWidth
-          });
-          
-          // Pusatkan crop box
-          this.cropper.setCropBoxData({
-            left: (containerData.width - cropBoxWidth) / 2,
-            top: (containerData.height - cropBoxWidth) / 2
-          });
-        }
-      });
-    };
+  aspectRatio: 1,
+  viewMode: 1,
+  autoCropArea: 0.8,
+  responsive: true,
+  guides: true,
+  center: true,
+  highlight: true,
+  dragMode: 'move',
+  toggleDragModeOnDblclick: false,
+  background: true,
+  modal: true,
+  minContainerWidth: 300,
+  minContainerHeight: 300,
+  ready: () => {
+    // zoom dan set crop box agar sesuai ukuran modal
+    const containerData = this.cropper.getContainerData();
+    const cropBoxSize = Math.min(containerData.width, containerData.height) * 0.8;
+    this.cropper.setCropBoxData({
+      width: cropBoxSize,
+      height: cropBoxSize,
+      left: (containerData.width - cropBoxSize) / 2,
+      top: (containerData.height - cropBoxSize) / 2
+    });
+  }
+});
     
     img.onerror = () => {
       alert('Gagal memuat gambar. Coba gambar lain.');
