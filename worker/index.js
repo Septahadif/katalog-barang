@@ -296,6 +296,11 @@ const INDEX_HTML = `<!DOCTYPE html>
       justify-content: center;
     }
 
+    /* Auto-capitalize input */
+    .capitalize-input {
+      text-transform: capitalize;
+    }
+
     /* Mobile-specific styles */
     @media (max-width: 480px) {
       #cropModalContent {
@@ -452,20 +457,22 @@ const INDEX_HTML = `<!DOCTYPE html>
       <!-- Form Tambah Barang -->
       <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
         <div>
-  <label class="block mb-1 font-medium">Nama Barang</label>
-  <input id="nama" name="nama" type="text" required 
-         class="w-full border p-2 rounded capitalize-input"
-         placeholder="">
+          <label class="block mb-1 font-medium">Nama Barang</label>
+          <input id="nama" name="nama" type="text" required 
+                 class="w-full border p-2 rounded capitalize-input"
+                 placeholder="Contoh: Buku Gambar">
         </div>
         <div>
           <label class="block mb-1 font-medium">Harga (Rp)</label>
-          <input id="harga" name="harga" type="number" required class="w-full border p-2 rounded">
+          <input id="harga" name="harga" type="number" required 
+                 class="w-full border p-2 rounded"
+                 placeholder="Contoh: 25000">
         </div>
         <div>
-  <label class="block mb-1 font-medium">Satuan</label>
-  <input id="satuan" name="satuan" type="text" required 
-         class="w-full border p-2 rounded capitalize-input"
-         placeholder="">
+          <label class="block mb-1 font-medium">Satuan</label>
+          <input id="satuan" name="satuan" type="text" required 
+                 class="w-full border p-2 rounded capitalize-input"
+                 placeholder="Contoh: Box / Pack">
         </div>
         <div>
           <label class="block mb-1 font-medium">Gambar</label>
@@ -503,8 +510,6 @@ class BarangApp {
     this.initEventListeners();
     this.checkAdminStatus();
     this.loadBarang();
-    this.namaInput = document.getElementById('nama');
-    this.satuanInput = document.getElementById('satuan');
   }
 
   initElements() {
@@ -526,6 +531,8 @@ class BarangApp {
     this.zoomInBtn = document.getElementById('zoomInBtn');
     this.zoomOutBtn = document.getElementById('zoomOutBtn');
     this.resetZoomBtn = document.getElementById('resetZoomBtn');
+    this.namaInput = document.getElementById('nama');
+    this.satuanInput = document.getElementById('satuan');
   }
 
   initEventListeners() {
@@ -544,6 +551,28 @@ class BarangApp {
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
     this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
+  }
+
+  autoCapitalize(event, force = false) {
+    const input = event.target;
+    const originalValue = input.value;
+    
+    if (originalValue.length === 0) return;
+    
+    const startPos = input.selectionStart;
+    const endPos = input.selectionEnd;
+    
+    let newValue = originalValue.replace(/\b\w/g, char => char.toUpperCase());
+    
+    if (force && newValue !== originalValue) {
+      newValue = newValue.replace(/\s+/g, ' ').trim();
+    }
+    
+    if (newValue !== originalValue) {
+      input.value = newValue;
+      const lengthDiff = newValue.length - originalValue.length;
+      input.setSelectionRange(startPos + lengthDiff, endPos + lengthDiff);
+    }
   }
 
   showLoginModal() {
@@ -576,28 +605,6 @@ class BarangApp {
       this.showLoginBtn.classList.remove('hidden');
     }
   }
-  
-  autoCapitalize(event, force = false) {
-  const input = event.target;
-  const originalValue = input.value;
-  
-  if (originalValue.length === 0) return;
-  
-  const startPos = input.selectionStart;
-  const endPos = input.selectionEnd;
-  
-  let newValue = originalValue.replace(/\b\w/g, char => char.toUpperCase());
-  
-  if (force && newValue !== originalValue) {
-    newValue = newValue.replace(/\s+/g, ' ').trim();
-  }
-  
-  if (newValue !== originalValue) {
-    input.value = newValue;
-    const lengthDiff = newValue.length - originalValue.length;
-    input.setSelectionRange(startPos + lengthDiff, endPos + lengthDiff);
-  }
-}
 
   async handleLogin(e) {
     e.preventDefault();
