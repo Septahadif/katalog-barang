@@ -452,16 +452,20 @@ const INDEX_HTML = `<!DOCTYPE html>
       <!-- Form Tambah Barang -->
       <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
         <div>
-          <label class="block mb-1 font-medium">Nama Barang</label>
-          <input id="nama" name="nama" type="text" required class="w-full border p-2 rounded">
+  <label class="block mb-1 font-medium">Nama Barang</label>
+  <input id="nama" name="nama" type="text" required 
+         class="w-full border p-2 rounded capitalize-input"
+         placeholder="">
         </div>
         <div>
           <label class="block mb-1 font-medium">Harga (Rp)</label>
           <input id="harga" name="harga" type="number" required class="w-full border p-2 rounded">
         </div>
         <div>
-          <label class="block mb-1 font-medium">Satuan</label>
-          <input id="satuan" name="satuan" type="text" required class="w-full border p-2 rounded">
+  <label class="block mb-1 font-medium">Satuan</label>
+  <input id="satuan" name="satuan" type="text" required 
+         class="w-full border p-2 rounded capitalize-input"
+         placeholder="">
         </div>
         <div>
           <label class="block mb-1 font-medium">Gambar</label>
@@ -499,6 +503,8 @@ class BarangApp {
     this.initEventListeners();
     this.checkAdminStatus();
     this.loadBarang();
+    this.namaInput = document.getElementById('nama');
+    this.satuanInput = document.getElementById('satuan');
   }
 
   initElements() {
@@ -534,6 +540,10 @@ class BarangApp {
     this.zoomInBtn.addEventListener('click', () => this.zoomIn());
     this.zoomOutBtn.addEventListener('click', () => this.zoomOut());
     this.resetZoomBtn.addEventListener('click', () => this.resetZoom());
+    this.namaInput.addEventListener('input', (e) => this.autoCapitalize(e));
+    this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
+    this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
+    this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
   }
 
   showLoginModal() {
@@ -566,6 +576,28 @@ class BarangApp {
       this.showLoginBtn.classList.remove('hidden');
     }
   }
+  
+  autoCapitalize(event, force = false) {
+  const input = event.target;
+  const originalValue = input.value;
+  
+  if (originalValue.length === 0) return;
+  
+  const startPos = input.selectionStart;
+  const endPos = input.selectionEnd;
+  
+  let newValue = originalValue.replace(/\b\w/g, char => char.toUpperCase());
+  
+  if (force && newValue !== originalValue) {
+    newValue = newValue.replace(/\s+/g, ' ').trim();
+  }
+  
+  if (newValue !== originalValue) {
+    input.value = newValue;
+    const lengthDiff = newValue.length - originalValue.length;
+    input.setSelectionRange(startPos + lengthDiff, endPos + lengthDiff);
+  }
+}
 
   async handleLogin(e) {
     e.preventDefault();
