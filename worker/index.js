@@ -315,33 +315,32 @@ const INDEX_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-<div class="w-full max-w-4xl mx-auto relative"> <!-- Lebarkan container dan pusatkan -->
+<div class="w-full max-w-4xl mx-auto relative">
   <!-- Header Section -->
-  <div class="relative mb-8 h-20"> <!-- Tambahkan height khusus untuk header -->
-    <!-- Tombol Login -->
+  <div class="relative mb-8 h-20">
     <button id="showLoginBtn" 
-            class="absolute top-0 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition z-10">
+            class="absolute top-0 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition z-20">
       Login
     </button>
     
-    <!-- Judul Katalog -->
-    <div class="pt-16 text-center"> <!-- Padding top untuk tombol login -->
+    <div class="pt-16 text-center">
       <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
     </div>
   </div>
 
-  <!-- Admin Controls -->
-  <div id="adminControls" class="hidden mb-8">
+  <!-- Admin Controls - HILANGKAN CLASS HIDDEN DEFAULT -->
+  <div id="adminControls" class="mb-8"> <!-- Class hidden dihapus -->
     <form id="formBarang" class="bg-white p-6 rounded-lg shadow-md space-y-4">
-      <!-- ... isi form ... -->
+      <!-- Isi form -->
     </form>
   </div>
 
-  <!-- Katalog Barang - Perbaikan utama di sini -->
   <div id="katalog" class="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 w-full">
-    <!-- Item akan muncul di sini -->
+    <!-- Item katalog -->
   </div>
 </div>
+
+<!-- Modal Login (tetap sama) -->
     
     <!-- Admin Login Modal -->
     <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -440,6 +439,7 @@ class BarangApp {
     this.initEventListeners();
     this.checkAdminStatus();
     this.loadBarang();
+    this.toggleAdminUI();
   }
 
   initElements() {
@@ -497,7 +497,6 @@ class BarangApp {
       this.showLoginBtn.classList.add('hidden');
     } else {
       this.adminControls.classList.add('hidden');
-      this.loginModal.classList.add('hidden');
       this.showLoginBtn.classList.remove('hidden');
     }
   }
