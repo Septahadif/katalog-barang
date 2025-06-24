@@ -17,13 +17,6 @@ export default {
       });
     }
 
-    // Serve Cropper CSS
-    if (path === "/cropper.css") {
-      return new Response(CROPPER_CSS, {
-        headers: { "Content-Type": "text/css" },
-      });
-    }
-
     // Serve Image
     if (path.startsWith("/api/image/")) {
       const id = path.split('/')[3];
@@ -139,8 +132,6 @@ export default {
   }
 }
 
-const CROPPER_CSS = `/* Cropper.js CSS will be loaded from CDN */`;
-
 const INDEX_HTML = `<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -148,33 +139,7 @@ const INDEX_HTML = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Katalog Barang</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
   <style>
-    /* Cropper Custom Styles */
-    .cropper-container {
-      background-color: white !important;
-    }
-    .cropper-modal {
-      background-color: white !important;
-    }
-    .cropper-view-box {
-      outline: 2px solid #39f;
-      box-shadow: none;
-    }
-    .cropper-dashed {
-      border: 0 dashed #eee;
-    }
-    .cropper-point {
-      background-color: #39f;
-      width: 24px;
-      height: 24px;
-      opacity: 1;
-      border-radius: 50%;
-    }
-    .cropper-line {
-      background-color: rgba(57, 153, 255, 0.6);
-    }
-    
     /* Custom Styles */
     .login-modal-buttons {
       display: flex;
@@ -216,118 +181,9 @@ const INDEX_HTML = `<!DOCTYPE html>
       font-size: 0.875rem;
     }
     
-    /* Enhanced Crop Modal Styles */
-    #cropModal {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0,0,0,0.9);
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-      padding: 0;
-      box-sizing: border-box;
-      touch-action: none;
-    }
-
-    #cropModalContent {
-      background: white;
-      padding: 15px;
-      border-radius: 8px;
-      width: 95%;
-      max-width: 95%;
-      height: 90vh;
-      max-height: 90vh;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    #cropImage {
-      max-width: 100%;
-      max-height: calc(90vh - 150px);
-      display: block;
-      background-color: white;
-      touch-action: none;
-    }
-
-    .crop-actions {
-      position: absolute;
-      bottom: 15px;
-      left: 0;
-      right: 0;
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      padding: 0 15px;
-    }
-
-    .crop-actions button {
-      flex: 1;
-      padding: 12px;
-      font-size: 16px;
-    }
-
-    /* Zoom Controls */
-    .zoom-controls {
-      position: absolute;
-      top: 15px;
-      right: 15px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      z-index: 1;
-    }
-
-    .zoom-controls button {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: rgba(0, 0, 0, 0.7);
-      color: white;
-      border: none;
-      font-size: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
     /* Auto-capitalize input */
     .capitalize-input {
       text-transform: capitalize;
-    }
-
-    /* Mobile-specific styles */
-    @media (max-width: 480px) {
-      #cropModalContent {
-        width: 100%;
-        height: 100%;
-        max-height: 100%;
-        border-radius: 0;
-        padding: 10px;
-      }
-
-      #cropImage {
-        max-height: calc(100vh - 140px);
-      }
-
-      .cropper-point {
-        width: 28px;
-        height: 28px;
-      }
-
-      .crop-actions {
-        bottom: 10px;
-      }
-
-      .crop-actions button {
-        padding: 10px;
-        font-size: 14px;
-      }
     }
 
     /* Loading states */
@@ -427,27 +283,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Crop Modal -->
-    <div id="cropModal">
-      <div id="cropModalContent">
-        <h3 class="text-lg font-bold mb-3">Crop Gambar</h3>
-        <div class="zoom-controls">
-          <button id="zoomInBtn">+</button>
-          <button id="zoomOutBtn">-</button>
-          <button id="resetZoomBtn">↻</button>
-        </div>
-        <img id="cropImage">
-        <div class="crop-actions">
-          <button id="cancelCrop" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
-            Batal
-          </button>
-          <button id="saveCrop" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
-            Simpan
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- Admin Controls -->
     <div id="adminControls" class="hidden mb-6">
       <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
@@ -491,7 +326,6 @@ const INDEX_HTML = `<!DOCTYPE html>
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
   <script src="script.js"></script>
 </body>
 </html>`;
@@ -500,8 +334,6 @@ const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
     this.isAdmin = false;
-    this.cropper = null;
-    this.croppedImageBlob = null;
     this.loadingQueue = [];
     this.currentLoadingIndex = 0;
     this.loadingBatchSize = 4;
@@ -524,13 +356,6 @@ class BarangApp {
     this.fileInput = document.getElementById('gambar');
     this.imagePreview = document.getElementById('imagePreview');
     this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
-    this.cropModal = document.getElementById('cropModal');
-    this.cropImage = document.getElementById('cropImage');
-    this.saveCropBtn = document.getElementById('saveCrop');
-    this.cancelCropBtn = document.getElementById('cancelCrop');
-    this.zoomInBtn = document.getElementById('zoomInBtn');
-    this.zoomOutBtn = document.getElementById('zoomOutBtn');
-    this.resetZoomBtn = document.getElementById('resetZoomBtn');
     this.namaInput = document.getElementById('nama');
     this.satuanInput = document.getElementById('satuan');
   }
@@ -542,11 +367,6 @@ class BarangApp {
     this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
     this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
-    this.saveCropBtn.addEventListener('click', () => this.saveCrop());
-    this.cancelCropBtn.addEventListener('click', () => this.cancelCrop());
-    this.zoomInBtn.addEventListener('click', () => this.zoomIn());
-    this.zoomOutBtn.addEventListener('click', () => this.zoomOut());
-    this.resetZoomBtn.addEventListener('click', () => this.resetZoom());
     this.namaInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
@@ -562,10 +382,10 @@ class BarangApp {
     const startPos = input.selectionStart;
     const endPos = input.selectionEnd;
     
-    let newValue = originalValue.replace(/\b\w/g, char => char.toUpperCase());
+    let newValue = originalValue.replace(/\\b\\w/g, char => char.toUpperCase());
     
     if (force && newValue !== originalValue) {
-      newValue = newValue.replace(/\s+/g, ' ').trim();
+      newValue = newValue.replace(/\\s+/g, ' ').trim();
     }
     
     if (newValue !== originalValue) {
@@ -643,25 +463,6 @@ class BarangApp {
     }
   }
 
-  zoomIn() {
-    if (this.cropper) {
-      this.cropper.zoom(0.1);
-    }
-  }
-
-  zoomOut() {
-    if (this.cropper) {
-      this.cropper.zoom(-0.1);
-    }
-  }
-
-  resetZoom() {
-    if (this.cropper) {
-      this.cropper.reset();
-      this.cropper.zoomTo(1.0);
-    }
-  }
-
   handleFileSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -675,66 +476,8 @@ class BarangApp {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      
-      img.onload = () => {
-        this.cropImage.src = img.src;
-        this.cropModal.style.display = 'flex';
-        
-        if (this.cropper) {
-          this.cropper.destroy();
-        }
-        
-        this.cropper = new Cropper(this.cropImage, {
-          aspectRatio: 1,
-          viewMode: 1,
-          autoCropArea: 0.8,
-          responsive: true,
-          restore: false,
-          checkCrossOrigin: false,
-          checkOrientation: false,
-          modal: true,
-          guides: false,
-          center: false,
-          highlight: false,
-          background: false,
-          movable: true,
-          rotatable: false,
-          scalable: false,
-          zoomable: true,
-          zoomOnTouch: true,
-          zoomOnWheel: true,
-          wheelZoomRatio: 0.1,
-          cropBoxMovable: true,
-          cropBoxResizable: true,
-          toggleDragModeOnDblclick: false,
-          minCanvasWidth: 200,
-          minCanvasHeight: 200,
-          minContainerWidth: 200,
-          minContainerHeight: 200,
-          minCropBoxWidth: 100,
-          minCropBoxHeight: 100,
-          ready: () => {
-            this.cropper.zoomTo(1.0);
-            
-            const containerData = this.cropper.getContainerData();
-            const cropBoxWidth = Math.min(containerData.width, containerData.height) * 0.8;
-            
-            this.cropper.setCropBoxData({
-              width: cropBoxWidth,
-              height: cropBoxWidth,
-              left: (containerData.width - cropBoxWidth) / 2,
-              top: (containerData.height - cropBoxWidth) / 2
-            });
-          }
-        });
-      };
-      
-      img.onerror = () => {
-        alert('Gagal memuat gambar. Coba gambar lain.');
-        this.fileInput.value = '';
-      };
+      this.imagePreview.src = event.target.result;
+      this.imagePreviewContainer.classList.remove('hidden');
     };
     
     reader.onerror = () => {
@@ -743,60 +486,6 @@ class BarangApp {
     };
     
     reader.readAsDataURL(file);
-  }
-
-  saveCrop() {
-    if (!this.cropper) {
-      alert('Cropper belum siap');
-      return;
-    }
-
-    const canvas = this.cropper.getCroppedCanvas({
-      width: 800,
-      height: 800,
-      minWidth: 400,
-      minHeight: 400,
-      maxWidth: 1200,
-      maxHeight: 1200,
-      fillColor: '#fff',
-      imageSmoothingEnabled: true,
-      imageSmoothingQuality: 'high',
-    });
-
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        alert('Gagal melakukan crop gambar');
-        return;
-      }
-
-      this.croppedImageBlob = blob;
-      
-      const previewUrl = URL.createObjectURL(blob);
-      this.imagePreview.src = previewUrl;
-      this.imagePreviewContainer.classList.remove('hidden');
-      
-      this.cropModal.style.display = 'none';
-      this.cropper.destroy();
-      this.cropper = null;
-      
-      const fileName = this.fileInput.files[0].name;
-      const fileExt = fileName.split('.').pop().toLowerCase();
-      const newFileName = 'cropped.' + fileExt;
-      
-      const file = new File([blob], newFileName, { type: blob.type });
-      const dataTransfer = new DataTransfer();
-      dataTransfer.items.add(file);
-      this.fileInput.files = dataTransfer.files;
-    }, 'image/jpeg', 0.95);
-  }
-
-  cancelCrop() {
-    this.cropModal.style.display = 'none';
-    if (this.cropper) {
-      this.cropper.destroy();
-      this.cropper = null;
-    }
-    this.fileInput.value = '';
   }
 
   async handleSubmit(e) {
@@ -818,15 +507,8 @@ class BarangApp {
         throw new Error('Semua field harus diisi');
       }
 
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64Data = reader.result.split(',')[1] || reader.result;
-          resolve('data:image/jpeg;base64,' + base64Data);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(formData.gambar);
-      });
+      // Create a square version of the image
+      const base64 = await this.createSquareImage(formData.gambar);
 
       const response = await fetch('/api/tambah', {
         method: 'POST',
@@ -854,6 +536,45 @@ class BarangApp {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Tambah Barang';
     }
+  }
+
+  createSquareImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          // Determine the size of the square (use the smaller dimension)
+          const size = Math.min(img.width, img.height);
+          canvas.width = size;
+          canvas.height = size;
+          
+          // Draw the image centered and cropped to square
+          const offsetX = (img.width - size) / 2;
+          const offsetY = (img.height - size) / 2;
+          ctx.drawImage(img, offsetX, offsetY, size, size, 0, 0, size, size);
+          
+          // Convert to base64 with quality 85%
+          const base64 = canvas.toDataURL('image/jpeg', 0.85);
+          resolve(base64);
+        };
+        
+        img.onerror = () => {
+          reject(new Error('Gagal memuat gambar'));
+        };
+      };
+      
+      reader.onerror = () => {
+        reject(new Error('Gagal membaca file'));
+      };
+      
+      reader.readAsDataURL(file);
+    });
   }
 
   async loadBarang() {
