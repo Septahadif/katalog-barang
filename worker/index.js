@@ -57,7 +57,7 @@ export default {
         return new Response(JSON.stringify({ success: true }), {
           headers: { 
             "Content-Type": "application/json",
-            "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
+            "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict; Path=/"
           }
         });
       }
@@ -77,7 +77,7 @@ export default {
       return new Response(JSON.stringify({ success: true }), {
         headers: { 
           "Content-Type": "application/json",
-          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+          "Set-Cookie": "admin=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
         }
       });
     }
@@ -101,6 +101,10 @@ export default {
       }
 
       const body = await req.json();
+      if (!body.nama || !body.harga || !body.satuan || !body.base64) {
+        return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 400 });
+      }
+
       const items = JSON.parse(await env.KATALOG.get("items") || "[]");
 
       const item = { 
@@ -149,153 +153,8 @@ const INDEX_HTML = `<!DOCTYPE html>
   <title>Katalog Barang</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+  <link rel="stylesheet" href="/cropper.css">
   <style>
-   /* Cropper Custom Styles untuk Mobile */
-.cropper-container {
-  background-color: white !important;
-  touch-action: none;
-}
-
-.cropper-modal {
-  background-color: white !important;
-}
-
-.cropper-view-box {
-  outline: 2px solid #39f;
-  box-shadow: none;
-  touch-action: none;
-}
-
-.cropper-dashed {
-  border: 0 dashed #eee;
-}
-
-.cropper-point {
-  background-color: #39f;
-  width: 15px;
-  height: 15px;
-  opacity: 1;
-  touch-action: none;
-}
-
-.cropper-line {
-  background-color: #39f;
-  touch-action: none;
-}
-    
-    /* Custom Styles */
-    .login-modal-buttons {
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
-    }
-    #adminControls {
-      transition: all 0.3s ease;
-    }
-    .image-preview {
-      max-width: 100%;
-      height: auto;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      margin-top: 10px;
-      background-color: white;
-      display: block;
-    }
-    .header-container {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      margin-bottom: 1rem;
-      width: 100%;
-    }
-    .title-center {
-      text-align: center;
-      width: 100%;
-      margin-top: 10px;
-    }
-    .login-btn-container {
-      margin-bottom: 10px;
-    }
-    .login-btn {
-      background-color: #4b5563;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
-      font-size: 0.875rem;
-    }
-    
-  /* Responsive Crop Modal */
-#cropModal {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0,0,0,0.9);
-  z-index: 1000;
-  justify-content: center;
-  align-items: center;
-  padding: 5px;
-  box-sizing: border-box;
-}
-
-#cropModalContent {
-  background: white;
-  padding: 15px;
-  padding-bottom: 70px;
-  border-radius: 8px;
-  width: 98%;
-  max-width: 100%;
-  height: 90vh;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-#cropImage {
-  max-width: 100%;
-  max-height: calc(90vh - 100px);
-  display: block;
-  background-color: white;
-  margin: 0 auto;
-}
-
-.crop-actions {
-  position: absolute;
-  bottom: 15px;
-  left: 0;
-  right: 0;
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 0 15px;
-}
-
-@media (max-width: 480px) {
-  #cropModalContent {
-    padding: 10px;
-    padding-bottom: 60px;
-    width: 95%;
-    height: 85vh;
-  }
-  
-  #cropImage {
-    max-height: calc(85vh - 90px);
-  }
-  
-  .crop-actions {
-    flex-direction: row;
-    bottom: 10px;
-  }
-  
-  .crop-actions button {
-    flex: 1;
-    padding: 8px 0;
-  }
-}
-
     /* Loading states */
     .skeleton-item {
       background-color: #f3f4f6;
@@ -447,7 +306,7 @@ const INDEX_HTML = `<!DOCTYPE html>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
-  <script src="script.js"></script>
+  <script src="/script.js"></script>
 </body>
 </html>`;
 
@@ -585,6 +444,12 @@ class BarangApp {
       return;
     }
 
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      alert('Ukuran gambar terlalu besar. Maksimal 5MB.');
+      this.fileInput.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
@@ -717,6 +582,7 @@ class BarangApp {
       this.cropper = null;
     }
     this.fileInput.value = '';
+    this.imagePreviewContainer.classList.add('hidden');
   }
 
   async handleSubmit(e) {
@@ -742,8 +608,8 @@ class BarangApp {
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
-          const base64Data = reader.result.split(',')[1] || reader.result;
-          resolve('data:image/jpeg;base64,' + base64Data);
+          const base64Data = reader.result;
+          resolve(base64Data);
         };
         reader.onerror = reject;
         reader.readAsDataURL(formData.gambar);
@@ -779,7 +645,7 @@ class BarangApp {
 
   async loadBarang() {
     try {
-      // Show skeleton loading - FIXED: Properly escape HTML in template literals
+      // Show skeleton loading
       this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
         <div class="bg-white p-3 rounded shadow skeleton-item">
           <div class="skeleton-image"></div>
@@ -809,7 +675,7 @@ class BarangApp {
       this.processLoadingQueue();
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = `<div class="text-center py-4 text-red-500"><p>Gagal memuat data: ${this.escapeHtml(error.message)}</p></div>`;
+      this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
     }
   }
 
@@ -841,25 +707,25 @@ class BarangApp {
     
     const itemElement = document.createElement('div');
     itemElement.className = 'bg-white p-3 rounded shadow item-animate';
-    itemElement.style.animationDelay = `${index * 0.05}s`;
+    itemElement.style.animationDelay = \`\${index * 0.05}s\`;
     itemElement.setAttribute('data-id', escapedId);
     
-    itemElement.innerHTML = `
+    itemElement.innerHTML = \`
       <div class="image-container">
         <img 
-          src="/api/image/${escapedId}?t=${item.timestamp || Date.now()}" 
-          alt="${escapedNama}" 
+          src="/api/image/\${escapedId}?t=\${item.timestamp || Date.now()}" 
+          alt="\${escapedNama}" 
           class="loading" 
           loading="lazy"
           onload="this.classList.remove('loading'); this.classList.add('loaded')"
         >
       </div>
-      <h2 class="text-lg font-semibold mt-2">${escapedNama}</h2>
-      <p class="text-sm text-gray-600">Rp ${hargaFormatted} / ${escapedSatuan}</p>
-      ${this.isAdmin ? 
-        `<button onclick="app.hapusBarang('${escapedId}')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>` 
+      <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
+      <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
+      \${this.isAdmin ? 
+        \`<button onclick="app.hapusBarang('\${escapedId}')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>\` 
         : ''}
-    `;
+    \`;
     
     this.katalog.appendChild(itemElement);
   }
@@ -869,7 +735,7 @@ class BarangApp {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
+      const response = await fetch(\`/api/hapus?id=\${id}\`, { method: 'POST' });
       if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
