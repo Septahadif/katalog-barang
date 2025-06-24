@@ -521,71 +521,86 @@ class BarangApp {
     }
   }
 
-  handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+  // In the handleFileSelect method:
+handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
 
-    // Validasi tipe file
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
-    if (!validTypes.includes(file.type)) {
-      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
-      this.fileInput.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      // Buat gambar baru untuk memastikan load sempurna
-      const img = new Image();
-      img.src = event.target.result;
-      
-      img.onload = () => {
-        this.cropImage.src = img.src;
-        this.cropModal.style.display = 'flex';
-        
-        // Hancurkan cropper lama jika ada
-        if (this.cropper) {
-          this.cropper.destroy();
-        }
-        
-        // Inisialisasi Cropper.js dengan pengaturan baru
-        this.cropper = new Cropper(this.cropImage, {
-          aspectRatio: 1,
-          viewMode: 1,
-          autoCropArea: 0.8,
-          responsive: true,
-          guides: false,
-          center: false,
-          highlight: false,
-          cropBoxMovable: false,
-          cropBoxResizable: false,
-          dragMode: 'move',
-          toggleDragModeOnDblclick: false,
-          background: true,
-          modal: false,
-          ready: () => {
-            // Pastikan gambar terlihat dengan jelas
-            this.cropper.setCanvasData({
-              width: img.width,
-              height: img.height
-            });
-          }
-        });
-      };
-      
-      img.onerror = () => {
-        alert('Gagal memuat gambar. Coba gambar lain.');
-        this.fileInput.value = '';
-      };
-    };
-    
-    reader.onerror = () => {
-      alert('Gagal membaca file. Coba lagi.');
-      this.fileInput.value = '';
-    };
-    
-    reader.readAsDataURL(file);
+  // Validasi tipe file
+  const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
+  if (!validTypes.includes(file.type)) {
+    alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
+    this.fileInput.value = '';
+    return;
   }
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    // Buat gambar baru untuk memastikan load sempurna
+    const img = new Image();
+    img.src = event.target.result;
+    
+    img.onload = () => {
+      this.cropImage.src = img.src;
+      this.cropModal.style.display = 'flex';
+      
+      // Hancurkan cropper lama jika ada
+      if (this.cropper) {
+        this.cropper.destroy();
+      }
+      
+      // Inisialisasi Cropper.js dengan pengaturan baru
+      this.cropper = new Cropper(this.cropImage, {
+        aspectRatio: 1,
+        viewMode: 1,
+        autoCropArea: 0.8,
+        responsive: true,
+        guides: false,
+        center: false,
+        highlight: false,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        dragMode: 'move',
+        toggleDragModeOnDblclick: false,
+        background: false, // Changed to false to remove extra transparent area
+        modal: true, // Changed to true to contain within crop area
+        minContainerWidth: 400,
+        minContainerHeight: 400,
+        ready: () => {
+          // Atur zoom awal untuk mengisi area crop
+          this.cropper.zoomTo(1.0);
+          
+          // Atur ukuran crop box yang lebih ketat
+          const containerData = this.cropper.getContainerData();
+          const cropBoxWidth = Math.min(containerData.width, containerData.height) * 0.8;
+          
+          this.cropper.setCropBoxData({
+            width: cropBoxWidth,
+            height: cropBoxWidth
+          });
+          
+          // Pusatkan crop box
+          this.cropper.setCropBoxData({
+            left: (containerData.width - cropBoxWidth) / 2,
+            top: (containerData.height - cropBoxWidth) / 2
+          });
+        }
+      });
+    };
+    
+    img.onerror = () => {
+      alert('Gagal memuat gambar. Coba gambar lain.');
+      this.fileInput.value = '';
+    };
+  };
+  
+  reader.onerror = () => {
+    alert('Gagal membaca file. Coba lagi.');
+    this.fileInput.value = '';
+  };
+  
+  reader.readAsDataURL(file);
+}
 
   saveCrop() {
     if (!this.cropper) {
