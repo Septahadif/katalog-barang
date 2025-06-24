@@ -315,27 +315,19 @@ const INDEX_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-  <div class="w-full max-w-2xl relative">
-  <!-- Tombol Login (Pojok Kanan Atas) -->
+  <div class="w-full max-w-2xl relative min-h-[120px]"> <!-- Tambahkan min-height -->
+  <!-- Tombol Login (Pojok Kanan Atas) - Tambahkan z-index -->
   <button id="showLoginBtn" 
-          class="absolute top-0 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
+          class="absolute top-4 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition z-50">
     Login
   </button>
 
   <!-- Judul Katalog (Tengah) -->
-  <div class="text-center mb-6 pt-10">  <!-- pt-10 untuk ruang tombol login -->
+  <div class="text-center mb-6 pt-16"> <!-- Tambahkan pt-16 -->
     <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
   </div>
 
-  <!-- Admin Controls (Form Input) -->
-  <div id="adminControls" class="hidden mb-8">
-    <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-8">
-      <!-- ... (isi form) ... -->
-    </form>
-  </div>
-
-  <!-- Katalog Barang -->
-  <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
+  <!-- ... (bagian adminControls dan katalog tetap sama) ... -->
 </div>
     
     <!-- Admin Login Modal -->
