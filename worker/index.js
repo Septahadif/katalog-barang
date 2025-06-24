@@ -779,14 +779,14 @@ class BarangApp {
 
   async loadBarang() {
     try {
-      // Show skeleton loading
-      this.katalog.innerHTML = Array.from({ length: 6 }, () => `
+      // Show skeleton loading - FIXED: Properly escape HTML in template literals
+      this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
         <div class="bg-white p-3 rounded shadow skeleton-item">
           <div class="skeleton-image"></div>
           <div class="skeleton-text medium"></div>
           <div class="skeleton-text short"></div>
         </div>
-      `).join('');
+      \`).join('');
 
       const response = await fetch('/api/list?t=' + Date.now());
       if (!response.ok) throw new Error('Gagal memuat data');
