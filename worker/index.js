@@ -145,7 +145,7 @@ const INDEX_HTML = `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Katalog Barang</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
@@ -158,7 +158,7 @@ const INDEX_HTML = `<!DOCTYPE html>
       background-color: white !important;
     }
     .cropper-view-box {
-      outline: 1px solid #39f;
+      outline: 2px solid #39f;
       box-shadow: none;
     }
     .cropper-dashed {
@@ -166,12 +166,13 @@ const INDEX_HTML = `<!DOCTYPE html>
     }
     .cropper-point {
       background-color: #39f;
-      width: 10px;
-      height: 10px;
+      width: 24px;
+      height: 24px;
       opacity: 1;
+      border-radius: 50%;
     }
     .cropper-line {
-      background-color: #39f;
+      background-color: rgba(57, 153, 255, 0.6);
     }
     
     /* Custom Styles */
@@ -215,90 +216,114 @@ const INDEX_HTML = `<!DOCTYPE html>
       font-size: 0.875rem;
     }
     
-   /* Crop Modal Styles Responsif */
-#cropModal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0,0,0,0.85);
-  z-index: 10000;
-  justify-content: center;
-  align-items: center;
-  padding: 15px;
-  box-sizing: border-box;
-}
+    /* Enhanced Crop Modal Styles */
+    #cropModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.9);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      padding: 0;
+      box-sizing: border-box;
+      touch-action: none;
+    }
 
-#cropModalContent {
-  background: white;
-  border-radius: 10px;
-  width: 100%;
-  max-width: 400px;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+    #cropModalContent {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      width: 95%;
+      max-width: 95%;
+      height: 90vh;
+      max-height: 90vh;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
 
-#cropImage {
-  width: 100%;
-  height: auto;
-  max-height: 60vh;
-  object-fit: contain;
-  background-color: white;
-}
+    #cropImage {
+      max-width: 100%;
+      max-height: calc(90vh - 150px);
+      display: block;
+      background-color: white;
+      touch-action: none;
+    }
 
-.crop-actions {
-  display: flex;
-  justify-content: space-around;
-  padding: 12px;
-  border-top: 1px solid #ddd;
-}
+    .crop-actions {
+      position: absolute;
+      bottom: 15px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      padding: 0 15px;
+    }
 
-.crop-actions button {
-  flex: 1;
-  margin: 0 8px;
-  padding: 12px 0;
-  font-size: 1rem;
-  border-radius: 6px;
-}
+    .crop-actions button {
+      flex: 1;
+      padding: 12px;
+      font-size: 16px;
+    }
 
-.crop-actions {
-  position: absolute;
-  bottom: 20px;
-  left: 0;
-  right: 0;
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-}
+    /* Zoom Controls */
+    .zoom-controls {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1;
+    }
 
-@media (max-width: 768px) {
-  #cropModalContent {
-    padding: 15px;
-    padding-bottom: 70px;
-    width: 98%;
-  }
-  
-  #cropImage {
-    max-height: 50vh;
-  }
-}
+    .zoom-controls button {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      border: none;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-@media (max-width: 480px) {
-  #cropModalContent {
-    padding: 10px;
-    padding-bottom: 60px;
-  }
-  
-  .crop-actions {
-    flex-direction: column;
-    align-items: center;
-  }
-  
-  .crop-actions button {
-    width: 90%;
-  }
-}
+    /* Mobile-specific styles */
+    @media (max-width: 480px) {
+      #cropModalContent {
+        width: 100%;
+        height: 100%;
+        max-height: 100%;
+        border-radius: 0;
+        padding: 10px;
+      }
+
+      #cropImage {
+        max-height: calc(100vh - 140px);
+      }
+
+      .cropper-point {
+        width: 28px;
+        height: 28px;
+      }
+
+      .crop-actions {
+        bottom: 10px;
+      }
+
+      .crop-actions button {
+        padding: 10px;
+        font-size: 14px;
+      }
+    }
 
     /* Loading states */
     .skeleton-item {
@@ -401,6 +426,11 @@ const INDEX_HTML = `<!DOCTYPE html>
     <div id="cropModal">
       <div id="cropModalContent">
         <h3 class="text-lg font-bold mb-3">Crop Gambar</h3>
+        <div class="zoom-controls">
+          <button id="zoomInBtn">+</button>
+          <button id="zoomOutBtn">-</button>
+          <button id="resetZoomBtn">↻</button>
+        </div>
         <img id="cropImage">
         <div class="crop-actions">
           <button id="cancelCrop" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
@@ -463,7 +493,7 @@ class BarangApp {
     this.croppedImageBlob = null;
     this.loadingQueue = [];
     this.currentLoadingIndex = 0;
-    this.loadingBatchSize = 4; // Number of items to load simultaneously
+    this.loadingBatchSize = 4;
     
     this.initElements();
     this.initEventListeners();
@@ -487,6 +517,9 @@ class BarangApp {
     this.cropImage = document.getElementById('cropImage');
     this.saveCropBtn = document.getElementById('saveCrop');
     this.cancelCropBtn = document.getElementById('cancelCrop');
+    this.zoomInBtn = document.getElementById('zoomInBtn');
+    this.zoomOutBtn = document.getElementById('zoomOutBtn');
+    this.resetZoomBtn = document.getElementById('resetZoomBtn');
   }
 
   initEventListeners() {
@@ -498,6 +531,9 @@ class BarangApp {
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
     this.saveCropBtn.addEventListener('click', () => this.saveCrop());
     this.cancelCropBtn.addEventListener('click', () => this.cancelCrop());
+    this.zoomInBtn.addEventListener('click', () => this.zoomIn());
+    this.zoomOutBtn.addEventListener('click', () => this.zoomOut());
+    this.resetZoomBtn.addEventListener('click', () => this.resetZoom());
   }
 
   showLoginModal() {
@@ -568,75 +604,107 @@ class BarangApp {
     }
   }
 
-  // In the handleFileSelect method:
-handleFileSelect(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  // Validasi tipe file
-  const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
-  if (!validTypes.includes(file.type)) {
-    alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
-    this.fileInput.value = '';
-    return;
+  zoomIn() {
+    if (this.cropper) {
+      this.cropper.zoom(0.1);
+    }
   }
 
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    // Buat gambar baru untuk memastikan load sempurna
-    const img = new Image();
-    img.src = event.target.result;
-    
-    img.onload = () => {
-      this.cropImage.src = img.src;
-      this.cropModal.style.display = 'flex';
-      
-      // Hancurkan cropper lama jika ada
-      if (this.cropper) {
-        this.cropper.destroy();
-      }
-      
-      // Inisialisasi Cropper.js dengan pengaturan baru
-      this.cropper = new Cropper(this.cropImage, {
-  aspectRatio: 1,
-  viewMode: 1,
-  autoCropArea: 1,
-  responsive: true,
-  guides: true,
-  center: true,
-  highlight: true,
-  dragMode: 'move',
-  toggleDragModeOnDblclick: false,
-  background: true,
-  modal: true,
-  minContainerWidth: 300,
-  minContainerHeight: 300,
-  ready: () => {
-    const containerData = this.cropper.getContainerData();
-    const cropBoxSize = Math.min(containerData.width, containerData.height) * 0.85;
-    
-    this.cropper.setCropBoxData({
-      width: cropBoxSize,
-      height: cropBoxSize,
-      left: (containerData.width - cropBoxSize) / 2,
-      top: (containerData.height - cropBoxSize) / 2
-    });
+  zoomOut() {
+    if (this.cropper) {
+      this.cropper.zoom(-0.1);
+    }
   }
-});
+
+  resetZoom() {
+    if (this.cropper) {
+      this.cropper.reset();
+      this.cropper.zoomTo(1.0);
+    }
+  }
+
+  handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
+    if (!validTypes.includes(file.type)) {
+      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
+      this.fileInput.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      
+      img.onload = () => {
+        this.cropImage.src = img.src;
+        this.cropModal.style.display = 'flex';
+        
+        if (this.cropper) {
+          this.cropper.destroy();
+        }
+        
+        this.cropper = new Cropper(this.cropImage, {
+          aspectRatio: 1,
+          viewMode: 1,
+          autoCropArea: 0.8,
+          responsive: true,
+          restore: false,
+          checkCrossOrigin: false,
+          checkOrientation: false,
+          modal: true,
+          guides: false,
+          center: false,
+          highlight: false,
+          background: false,
+          movable: true,
+          rotatable: false,
+          scalable: false,
+          zoomable: true,
+          zoomOnTouch: true,
+          zoomOnWheel: true,
+          wheelZoomRatio: 0.1,
+          cropBoxMovable: true,
+          cropBoxResizable: true,
+          toggleDragModeOnDblclick: false,
+          minCanvasWidth: 200,
+          minCanvasHeight: 200,
+          minContainerWidth: 200,
+          minContainerHeight: 200,
+          minCropBoxWidth: 100,
+          minCropBoxHeight: 100,
+          ready: () => {
+            this.cropper.zoomTo(1.0);
+            
+            const containerData = this.cropper.getContainerData();
+            const cropBoxWidth = Math.min(containerData.width, containerData.height) * 0.8;
+            
+            this.cropper.setCropBoxData({
+              width: cropBoxWidth,
+              height: cropBoxWidth,
+              left: (containerData.width - cropBoxWidth) / 2,
+              top: (containerData.height - cropBoxWidth) / 2
+            });
+          }
+        });
+      };
+      
+      img.onerror = () => {
+        alert('Gagal memuat gambar. Coba gambar lain.');
+        this.fileInput.value = '';
+      };
+    };
     
-    img.onerror = () => {
-      alert('Gagal memuat gambar. Coba gambar lain.');
+    reader.onerror = () => {
+      alert('Gagal membaca file. Coba lagi.');
       this.fileInput.value = '';
     };
-  };
-  
-  reader.onerror = () => {
-    alert('Gagal membaca file. Coba lagi.');
-    this.fileInput.value = '';
-  };
-  
-  reader.readAsDataURL(file);
-}
+    
+    reader.readAsDataURL(file);
+  }
 
   saveCrop() {
     if (!this.cropper) {
@@ -644,7 +712,6 @@ handleFileSelect(e) {
       return;
     }
 
-    // Dapatkan canvas hasil crop dengan kualitas tinggi
     const canvas = this.cropper.getCroppedCanvas({
       width: 800,
       height: 800,
@@ -657,7 +724,6 @@ handleFileSelect(e) {
       imageSmoothingQuality: 'high',
     });
 
-    // Konversi ke blob dengan kualitas tinggi
     canvas.toBlob((blob) => {
       if (!blob) {
         alert('Gagal melakukan crop gambar');
@@ -666,17 +732,14 @@ handleFileSelect(e) {
 
       this.croppedImageBlob = blob;
       
-      // Tampilkan preview
       const previewUrl = URL.createObjectURL(blob);
       this.imagePreview.src = previewUrl;
       this.imagePreviewContainer.classList.remove('hidden');
       
-      // Tutup modal crop
       this.cropModal.style.display = 'none';
       this.cropper.destroy();
       this.cropper = null;
       
-      // Update file input dengan file yang sudah di-crop
       const fileName = this.fileInput.files[0].name;
       const fileExt = fileName.split('.').pop().toLowerCase();
       const newFileName = 'cropped.' + fileExt;
@@ -685,7 +748,7 @@ handleFileSelect(e) {
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       this.fileInput.files = dataTransfer.files;
-    }, 'image/jpeg', 0.95); // Kualitas 95%
+    }, 'image/jpeg', 0.95);
   }
 
   cancelCrop() {
@@ -716,7 +779,6 @@ handleFileSelect(e) {
         throw new Error('Semua field harus diisi');
       }
 
-      // Convert image to base64
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -757,7 +819,6 @@ handleFileSelect(e) {
 
   async loadBarang() {
     try {
-      // Show skeleton loading
       this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
         <div class="bg-white p-3 rounded shadow skeleton-item">
           <div class="skeleton-image"></div>
@@ -776,14 +837,9 @@ handleFileSelect(e) {
         return;
       }
 
-      // Clear existing content
       this.katalog.innerHTML = '';
-      
-      // Initialize loading queue
       this.loadingQueue = items;
       this.currentLoadingIndex = 0;
-      
-      // Start loading items sequentially
       this.processLoadingQueue();
     } catch (error) {
       console.error('Error:', error);
@@ -792,7 +848,6 @@ handleFileSelect(e) {
   }
 
   processLoadingQueue() {
-    // Process a batch of items
     const endIndex = Math.min(
       this.currentLoadingIndex + this.loadingBatchSize,
       this.loadingQueue.length
@@ -804,9 +859,7 @@ handleFileSelect(e) {
 
     this.currentLoadingIndex = endIndex;
 
-    // Continue processing if there are more items
     if (this.currentLoadingIndex < this.loadingQueue.length) {
-      // Use setTimeout to allow the browser to render between batches
       setTimeout(() => this.processLoadingQueue(), 100);
     }
   }
@@ -869,7 +922,6 @@ handleFileSelect(e) {
   }
 }
 
-// Initialize app
 const app = new BarangApp();
 window.app = app;
 `;
