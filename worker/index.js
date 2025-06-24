@@ -451,6 +451,8 @@ class BarangApp {
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
     this.saveCropBtn.addEventListener('click', () => this.saveCrop());
     this.cancelCropBtn.addEventListener('click', () => this.cancelCrop());
+    this.form.nama.addEventListener('input', (e) => this.formatToTitleCase(e));
+    this.form.satuan.addEventListener('input', (e) => this.formatToTitleCase(e));
   }
 
   showLoginModal() {
@@ -483,6 +485,21 @@ class BarangApp {
       this.showLoginBtn.classList.remove('hidden');
     }
   }
+  
+  formatToTitleCase(e) {
+  const input = e.target;
+  const value = input.value;
+  
+  if (value.length === 0) return;
+  
+  // Format ke Title Case (huruf pertama setiap kata besar)
+  const formatted = value.toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+  
+  input.value = formatted;
+}
 
   async handleLogin(e) {
     e.preventDefault();
