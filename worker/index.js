@@ -315,20 +315,22 @@ const INDEX_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-  <div class="w-full max-w-xl">
-  <!-- Baris Pertama: Hanya Tombol Login (Di Kanan) -->
-  <div class="flex justify-end mb-2"> <!-- justify-end untuk posisi kanan -->
+  <div class="w-full max-w-2xl">  <!-- Lebarkan container -->
+  <!-- Tombol Login (Kanan) -->
+  <div class="flex justify-end mb-4">  <!-- Tambahkan mb-4 -->
     <button id="showLoginBtn" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
       Login
     </button>
   </div>
 
-  <!-- Baris Kedua: Judul Katalog (Tengah) -->
-  <div class="text-center mb-6">
+  <!-- Judul (Tengah) -->
+  <div class="text-center mb-10">  <!-- Tambahkan mb-10 -->
     <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
   </div>
 
-  <!-- ... (kode adminControls, form, dan katalog tetap sama) ... -->
+  <!-- Katalog -->
+  <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2">  <!-- Pastikan gap-4 ada -->
+  </div>
 </div>
     
     <!-- Admin Login Modal -->
