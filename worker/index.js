@@ -57,7 +57,7 @@ export default {
         return new Response(JSON.stringify({ success: true }), {
           headers: { 
             "Content-Type": "application/json",
-            "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict; Path=/"
+            "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
           }
         });
       }
@@ -77,7 +77,7 @@ export default {
       return new Response(JSON.stringify({ success: true }), {
         headers: { 
           "Content-Type": "application/json",
-          "Set-Cookie": "admin=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
         }
       });
     }
@@ -101,10 +101,6 @@ export default {
       }
 
       const body = await req.json();
-      if (!body.nama || !body.harga || !body.satuan || !body.base64) {
-        return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 400 });
-      }
-
       const items = JSON.parse(await env.KATALOG.get("items") || "[]");
 
       const item = { 
@@ -153,8 +149,146 @@ const INDEX_HTML = `<!DOCTYPE html>
   <title>Katalog Barang</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
-  <link rel="stylesheet" href="/cropper.css">
   <style>
+    /* Cropper Custom Styles */
+    .cropper-container {
+      background-color: white !important;
+    }
+    .cropper-modal {
+      background-color: white !important;
+    }
+    .cropper-view-box {
+      outline: 1px solid #39f;
+      box-shadow: none;
+    }
+    .cropper-dashed {
+      border: 0 dashed #eee;
+    }
+    .cropper-point {
+      background-color: #39f;
+      width: 10px;
+      height: 10px;
+      opacity: 1;
+    }
+    .cropper-line {
+      background-color: #39f;
+    }
+    
+    /* Custom Styles */
+    .login-modal-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    #adminControls {
+      transition: all 0.3s ease;
+    }
+    .image-preview {
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-top: 10px;
+      background-color: white;
+      display: block;
+    }
+    .header-container {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      margin-bottom: 1rem;
+      width: 100%;
+    }
+    .title-center {
+      text-align: center;
+      width: 100%;
+      margin-top: 10px;
+    }
+    .login-btn-container {
+      margin-bottom: 10px;
+    }
+    .login-btn {
+      background-color: #4b5563;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+    }
+    
+   /* Crop Modal Styles Responsif */
+#cropModal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.8);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+#cropModalContent {
+  background: white;
+  padding: 20px;
+  padding-bottom: 80px;
+  border-radius: 8px;
+  width: 95%;
+  max-width: 800px; /* Maksimum untuk desktop */
+  max-height: 90vh;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+#cropImage {
+  max-width: 100%;
+  max-height: 60vh;
+  display: block;
+  background-color: white;
+}
+
+.crop-actions {
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+@media (max-width: 768px) {
+  #cropModalContent {
+    padding: 15px;
+    padding-bottom: 70px;
+    width: 98%;
+  }
+  
+  #cropImage {
+    max-height: 50vh;
+  }
+}
+
+@media (max-width: 480px) {
+  #cropModalContent {
+    padding: 10px;
+    padding-bottom: 60px;
+  }
+  
+  .crop-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .crop-actions button {
+    width: 90%;
+  }
+}
+
     /* Loading states */
     .skeleton-item {
       background-color: #f3f4f6;
@@ -306,7 +440,7 @@ const INDEX_HTML = `<!DOCTYPE html>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
-  <script src="/script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>`;
 
@@ -318,22 +452,12 @@ class BarangApp {
     this.croppedImageBlob = null;
     this.loadingQueue = [];
     this.currentLoadingIndex = 0;
-    this.loadingBatchSize = 4;
+    this.loadingBatchSize = 4; // Number of items to load simultaneously
     
     this.initElements();
     this.initEventListeners();
     this.checkAdminStatus();
     this.loadBarang();
-
-    // Tambahkan event listener untuk orientation change
-    window.addEventListener('orientationchange', () => {
-      if (this.cropper) {
-        setTimeout(() => {
-          this.cropper.reset();
-          this.cropper.setAspectRatio(1);
-        }, 300);
-      }
-    });
   }
 
   initElements() {
@@ -433,97 +557,86 @@ class BarangApp {
     }
   }
 
-  handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+  // In the handleFileSelect method:
+handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
 
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
-    if (!validTypes.includes(file.type)) {
-      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
-      this.fileInput.value = '';
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) { // 5MB limit
-      alert('Ukuran gambar terlalu besar. Maksimal 5MB.');
-      this.fileInput.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      
-      img.onload = () => {
-        // Reset modal dan cropper sebelumnya
-        if (this.cropper) {
-          this.cropper.destroy();
-          this.cropper = null;
-        }
-        
-        this.cropImage.src = img.src;
-        this.cropModal.style.display = 'flex';
-        
-        // Deteksi perangkat
-        const isMobile = window.matchMedia("(max-width: 768px)").matches;
-        
-        // Opsi cropper yang dioptimalkan untuk mobile
-        const cropperOptions = {
-          aspectRatio: 1,
-          viewMode: 1,
-          autoCropArea: isMobile ? 0.8 : 0.85,
-          responsive: true,
-          restore: false,
-          checkCrossOrigin: false,
-          checkOrientation: false,
-          modal: false,
-          guides: false,
-          center: true,
-          highlight: false,
-          cropBoxMovable: true,
-          cropBoxResizable: true,
-          dragMode: 'move',
-          toggleDragModeOnDblclick: false,
-          background: false,
-          ready: () => {
-            const containerData = this.cropper.getContainerData();
-            const minSize = Math.min(containerData.width, containerData.height);
-            let cropBoxSize = minSize * (isMobile ? 0.9 : 0.8);
-            
-            // Pastikan crop box tidak terlalu kecil
-            cropBoxSize = Math.max(cropBoxSize, 200);
-            
-            this.cropper.setCropBoxData({
-              width: cropBoxSize,
-              height: cropBoxSize,
-              left: (containerData.width - cropBoxSize) / 2,
-              top: (containerData.height - cropBoxSize) / 2
-            });
-            
-            // Sesuaikan zoom untuk mobile
-            if (isMobile) {
-              this.cropper.zoomTo(0.8);
-            }
-          }
-        };
-        
-        this.cropper = new Cropper(this.cropImage, cropperOptions);
-      };
-      
-      img.onerror = () => {
-        alert('Gagal memuat gambar. Coba gambar lain.');
-        this.fileInput.value = '';
-      };
-    };
-    
-    reader.onerror = () => {
-      alert('Gagal membaca file. Coba lagi.');
-      this.fileInput.value = '';
-    };
-    
-    reader.readAsDataURL(file);
+  // Validasi tipe file
+  const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
+  if (!validTypes.includes(file.type)) {
+    alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
+    this.fileInput.value = '';
+    return;
   }
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    // Buat gambar baru untuk memastikan load sempurna
+    const img = new Image();
+    img.src = event.target.result;
+    
+    img.onload = () => {
+      this.cropImage.src = img.src;
+      this.cropModal.style.display = 'flex';
+      
+      // Hancurkan cropper lama jika ada
+      if (this.cropper) {
+        this.cropper.destroy();
+      }
+      
+      // Inisialisasi Cropper.js dengan pengaturan baru
+      this.cropper = new Cropper(this.cropImage, {
+        aspectRatio: 1,
+        viewMode: 1,
+        autoCropArea: 0.8,
+        responsive: true,
+        guides: false,
+        center: false,
+        highlight: false,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        dragMode: 'move',
+        toggleDragModeOnDblclick: false,
+        background: false, // Changed to false to remove extra transparent area
+        modal: true, // Changed to true to contain within crop area
+        minContainerWidth: 400,
+        minContainerHeight: 400,
+        ready: () => {
+          // Atur zoom awal untuk mengisi area crop
+          this.cropper.zoomTo(1.0);
+          
+          // Atur ukuran crop box yang lebih ketat
+          const containerData = this.cropper.getContainerData();
+          const cropBoxWidth = Math.min(containerData.width, containerData.height) * 0.8;
+          
+          this.cropper.setCropBoxData({
+            width: cropBoxWidth,
+            height: cropBoxWidth
+          });
+          
+          // Pusatkan crop box
+          this.cropper.setCropBoxData({
+            left: (containerData.width - cropBoxWidth) / 2,
+            top: (containerData.height - cropBoxWidth) / 2
+          });
+        }
+      });
+    };
+    
+    img.onerror = () => {
+      alert('Gagal memuat gambar. Coba gambar lain.');
+      this.fileInput.value = '';
+    };
+  };
+  
+  reader.onerror = () => {
+    alert('Gagal membaca file. Coba lagi.');
+    this.fileInput.value = '';
+  };
+  
+  reader.readAsDataURL(file);
+}
 
   saveCrop() {
     if (!this.cropper) {
@@ -582,7 +695,6 @@ class BarangApp {
       this.cropper = null;
     }
     this.fileInput.value = '';
-    this.imagePreviewContainer.classList.add('hidden');
   }
 
   async handleSubmit(e) {
@@ -608,8 +720,8 @@ class BarangApp {
       const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
-          const base64Data = reader.result;
-          resolve(base64Data);
+          const base64Data = reader.result.split(',')[1] || reader.result;
+          resolve('data:image/jpeg;base64,' + base64Data);
         };
         reader.onerror = reject;
         reader.readAsDataURL(formData.gambar);
@@ -735,7 +847,7 @@ class BarangApp {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      const response = await fetch(\`/api/hapus?id=\${id}\`, { method: 'POST' });
+      const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
       if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
