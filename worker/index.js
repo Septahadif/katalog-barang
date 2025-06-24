@@ -222,7 +222,6 @@ const INDEX_HTML = `<!DOCTYPE html>
   inset: 0;
   background-color: rgba(0,0,0,0.85);
   z-index: 10000;
-  display: flex;
   justify-content: center;
   align-items: center;
   padding: 15px;
@@ -230,7 +229,7 @@ const INDEX_HTML = `<!DOCTYPE html>
 }
 
 #cropModalContent {
-  background: #fff;
+  background: white;
   border-radius: 10px;
   width: 100%;
   max-width: 400px;
@@ -261,6 +260,16 @@ const INDEX_HTML = `<!DOCTYPE html>
   padding: 12px 0;
   font-size: 1rem;
   border-radius: 6px;
+}
+
+.crop-actions {
+  position: absolute;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
 }
 
 @media (max-width: 768px) {
@@ -591,7 +600,7 @@ handleFileSelect(e) {
       this.cropper = new Cropper(this.cropImage, {
   aspectRatio: 1,
   viewMode: 1,
-  autoCropArea: 0.8,
+  autoCropArea: 1,
   responsive: true,
   guides: true,
   center: true,
@@ -603,9 +612,9 @@ handleFileSelect(e) {
   minContainerWidth: 300,
   minContainerHeight: 300,
   ready: () => {
-    // zoom dan set crop box agar sesuai ukuran modal
     const containerData = this.cropper.getContainerData();
-    const cropBoxSize = Math.min(containerData.width, containerData.height) * 0.8;
+    const cropBoxSize = Math.min(containerData.width, containerData.height) * 0.85;
+    
     this.cropper.setCropBoxData({
       width: cropBoxSize,
       height: cropBoxSize,
