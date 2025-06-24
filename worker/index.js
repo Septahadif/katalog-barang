@@ -315,19 +315,32 @@ const INDEX_HTML = `<!DOCTYPE html>
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-  <div class="w-full max-w-2xl relative min-h-[120px]"> <!-- Tambahkan min-height -->
-  <!-- Tombol Login (Pojok Kanan Atas) - Tambahkan z-index -->
-  <button id="showLoginBtn" 
-          class="absolute top-4 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition z-50">
-    Login
-  </button>
-
-  <!-- Judul Katalog (Tengah) -->
-  <div class="text-center mb-6 pt-16"> <!-- Tambahkan pt-16 -->
-    <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
+<div class="w-full max-w-4xl mx-auto relative"> <!-- Lebarkan container dan pusatkan -->
+  <!-- Header Section -->
+  <div class="relative mb-8 h-20"> <!-- Tambahkan height khusus untuk header -->
+    <!-- Tombol Login -->
+    <button id="showLoginBtn" 
+            class="absolute top-0 right-0 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition z-10">
+      Login
+    </button>
+    
+    <!-- Judul Katalog -->
+    <div class="pt-16 text-center"> <!-- Padding top untuk tombol login -->
+      <h1 class="text-2xl font-bold">📦 Katalog Barang</h1>
+    </div>
   </div>
 
-  <!-- ... (bagian adminControls dan katalog tetap sama) ... -->
+  <!-- Admin Controls -->
+  <div id="adminControls" class="hidden mb-8">
+    <form id="formBarang" class="bg-white p-6 rounded-lg shadow-md space-y-4">
+      <!-- ... isi form ... -->
+    </form>
+  </div>
+
+  <!-- Katalog Barang - Perbaikan utama di sini -->
+  <div id="katalog" class="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 w-full">
+    <!-- Item akan muncul di sini -->
+  </div>
 </div>
     
     <!-- Admin Login Modal -->
