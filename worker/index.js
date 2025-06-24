@@ -237,19 +237,18 @@ const INDEX_HTML = `<!DOCTYPE html>
   padding-bottom: 80px;
   border-radius: 8px;
   width: 95%;
-  max-width: 800px; /* Batas lebar maksimum untuk desktop */
+  max-width: 800px; /* Maksimum untuk desktop */
   max-height: 90vh;
   position: relative;
   display: flex;
-  flex-direction: column; /* Layout lebih terstruktur */
+  flex-direction: column;
 }
 
 #cropImage {
   max-width: 100%;
-  max-height: 60vh; /* Diperkecil untuk memberi ruang margin */
+  max-height: 60vh;
   display: block;
   background-color: white;
-  margin: 10px 0; /* Margin vertikal tambahan */
 }
 
 .crop-actions {
@@ -262,20 +261,18 @@ const INDEX_HTML = `<!DOCTYPE html>
   gap: 10px;
 }
 
-/* Responsiveness untuk tablet */
 @media (max-width: 768px) {
   #cropModalContent {
     padding: 15px;
     padding-bottom: 70px;
-    width: 98%; /* Lebih melebar di tablet */
+    width: 98%;
   }
   
   #cropImage {
-    max-height: 50vh; /* Lebih besar di layar kecil */
+    max-height: 50vh;
   }
 }
 
-/* Responsiveness untuk mobile */
 @media (max-width: 480px) {
   #cropModalContent {
     padding: 10px;
@@ -283,12 +280,12 @@ const INDEX_HTML = `<!DOCTYPE html>
   }
   
   .crop-actions {
-    flex-direction: column; /* Tombol vertikal di mobile */
+    flex-direction: column;
     align-items: center;
   }
   
   .crop-actions button {
-    width: 90%; /* Tombol lebih lebar di mobile */
+    width: 90%;
   }
 }
 
@@ -585,64 +582,46 @@ handleFileSelect(e) {
         this.cropper.destroy();
       }
       
+      // Deteksi perangkat
       const isMobile = window.matchMedia("(max-width: 768px)").matches;
+      const isTablet = window.matchMedia("(min-width: 769px) and (max-width: 1024px)").matches;
       
+      // Sesuaikan pengaturan berdasarkan perangkat
       const cropperOptions = {
-        aspectRatio: 4/3, // Changed to 4:3 ratio
+        aspectRatio: 1,
         viewMode: 1,
-        autoCropArea: isMobile ? 0.75 : 0.8,
+        autoCropArea: isMobile ? 0.7 : 0.8,
         responsive: true,
-        guides: true,
+        guides: false,
         center: true,
-        highlight: true,
+        highlight: false,
         cropBoxMovable: true,
         cropBoxResizable: true,
         dragMode: 'move',
         toggleDragModeOnDblclick: false,
-        background: true,
+        background: false,
         modal: true,
-        minCanvasHeight: 300,
         ready: () => {
-          // Calculate initial crop box size with margins
           const containerData = this.cropper.getContainerData();
-          const imageData = this.cropper.getImageData();
+          let cropBoxSize;
           
-          // Ensure 20% margin on top and bottom
-          const maxHeight = containerData.height * 0.8;
-          const maxWidth = maxHeight * (4/3);
-          
-          // Center the crop box
-          const cropBoxData = {
-            width: Math.min(maxWidth, containerData.width * 0.9),
-            height: maxHeight,
-            left: (containerData.width - Math.min(maxWidth, containerData.width * 0.9)) / 2,
-            top: (containerData.height - maxHeight) / 2
-          };
-          
-          this.cropper.setCropBoxData(cropBoxData);
-          
-          // Auto-zoom to fit the product in the center
-          this.cropper.zoomTo(isMobile ? 0.8 : 1.0);
-          
-          // Center the image content
-          this.cropper.moveTo(
-            (imageData.naturalWidth - imageData.width) / 2,
-            (imageData.naturalHeight - imageData.height) / 2
-          );
-        },
-        crop: (e) => {
-          // Maintain minimum margins during cropping
-          const cropBoxData = this.cropper.getCropBoxData();
-          const containerData = this.cropper.getContainerData();
-          
-          const minMargin = containerData.height * 0.1; // 10% margin
-          if (cropBoxData.top < minMargin || 
-              cropBoxData.top + cropBoxData.height > containerData.height - minMargin) {
-            this.cropper.setCropBoxData({
-              top: minMargin,
-              height: containerData.height - (minMargin * 2)
-            });
+          if (isMobile) {
+            cropBoxSize = Math.min(containerData.width, containerData.height) * 0.9;
+            this.cropper.zoomTo(0.8);
+          } else if (isTablet) {
+            cropBoxSize = Math.min(containerData.width, containerData.height) * 0.8;
+            this.cropper.zoomTo(0.9);
+          } else {
+            cropBoxSize = Math.min(containerData.width, containerData.height) * 0.7;
+            this.cropper.zoomTo(1.0);
           }
+          
+          this.cropper.setCropBoxData({
+            width: cropBoxSize,
+            height: cropBoxSize,
+            left: (containerData.width - cropBoxSize) / 2,
+            top: (containerData.height - cropBoxSize) / 2
+          });
         }
       };
       
