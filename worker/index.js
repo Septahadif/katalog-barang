@@ -70,7 +70,7 @@ export default {
         const etag = await crypto.subtle.digest('SHA-1', imageBuffer)
           .then(hash => Array.from(new Uint8Array(hash))
             .map(b => b.toString(16).padStart(2, '0')).join('');
-
+          });
         // Check If-None-Match header
         const ifNoneMatch = req.headers.get('If-None-Match');
         if (ifNoneMatch === etag) {
