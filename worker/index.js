@@ -66,11 +66,12 @@ export default {
           contentType = "image/webp";
         }
 
-        // Generate ETag for caching
-        const etag = await crypto.subtle.digest('SHA-1', imageBuffer)
-          .then(hash => Array.from(new Uint8Array(hash))
-            .map(b => b.toString(16).padStart(2, '0')).join('');
-          });
+        // Versi yang diperbaiki
+const etag = await crypto.subtle.digest('SHA-1', imageBuffer)
+  .then(hash => {
+    const hashArray = Array.from(new Uint8Array(hash));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  });
         // Check If-None-Match header
         const ifNoneMatch = req.headers.get('If-None-Match');
         if (ifNoneMatch === etag) {
