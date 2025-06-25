@@ -6,62 +6,126 @@ export default {
     // Serve HTML
     if (path === "/" || path === "/index.html") {
       return new Response(INDEX_HTML, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: { 
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache"
+        },
       });
     }
 
     // Serve JS
     if (path === "/script.js") {
       return new Response(SCRIPT_JS, {
-        headers: { "Content-Type": "application/javascript; charset=utf-8" },
-      });
-    }
-
-    // Serve Image
-    if (path.startsWith("/api/image/")) {
-      const id = path.split('/')[3];
-      if (!id) return new Response("Missing ID", { status: 400 });
-
-      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-      const item = items.find(item => item.id === id);
-      
-      if (!item || !item.base64) {
-        return new Response("Image not found", { status: 404 });
-      }
-
-      // Extract image data from base64
-      const base64Data = item.base64.split(',')[1] || item.base64;
-      const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-      
-      return new Response(imageBuffer, {
         headers: { 
-          "Content-Type": "image/jpeg",
-          "Cache-Control": "public, max-age=31536000" // Cache for 1 year
-        }
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "no-cache"
+        },
       });
     }
 
-    // Login Admin
-    if (path === "/api/login" && req.method === "POST") {
-      const { username, password } = await req.json();
-      const isAdmin = username === "septa" && password === "septa2n2n";
-      
-      if (isAdmin) {
-        return new Response(JSON.stringify({ success: true }), {
+    // Serve Image with robust handling
+    if (path.startsWith("/api/image/")) {
+      try {
+        const id = path.split('/')[3];
+        if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+          return new Response("Invalid ID", { status: 400 });
+        }
+
+        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+        const item = items.find(item => item.id === id);
+        
+        if (!item || !item.base64) {
+          return new Response("Image not found", { status: 404 });
+        }
+
+        // Robust base64 handling
+        let base64Data;
+        if (item.base64.startsWith("data:")) {
+          const parts = item.base64.split(',');
+          if (parts.length < 2) {
+            return new Response("Invalid image format", { status: 400 });
+          }
+          base64Data = parts[1];
+        } else {
+          base64Data = item.base64;
+        }
+
+        // Validate base64
+        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64Data)) {
+          return new Response("Invalid image data", { status: 400 });
+        }
+
+        // Convert to buffer
+        const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+        // Determine content type
+        let contentType = "image/jpeg";
+        if (item.base64.startsWith("data:image/png")) {
+          contentType = "image/png";
+        } else if (item.base64.startsWith("data:image/webp")) {
+          contentType = "image/webp";
+        }
+
+        // Generate ETag for caching
+        const etag = await crypto.subtle.digest('SHA-1', imageBuffer)
+          .then(hash => Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // Check If-None-Match header
+        const ifNoneMatch = req.headers.get('If-None-Match');
+        if (ifNoneMatch === etag) {
+          return new Response(null, { status: 304 });
+        }
+
+        return new Response(imageBuffer, {
           headers: { 
-            "Content-Type": "application/json",
-            "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
+            "Content-Type": contentType,
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "ETag": etag
           }
         });
+      } catch (error) {
+        console.error("Image processing error:", error);
+        return new Response("Internal Server Error", { status: 500 });
       }
-      return new Response(JSON.stringify({ success: false }), { status: 401 });
+    }
+
+    // Login Admin with security headers
+    if (path === "/api/login" && req.method === "POST") {
+      try {
+        const { username, password } = await req.json();
+        const isAdmin = username === "septa" && password === "septa2n2n";
+        
+        if (isAdmin) {
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { 
+              "Content-Type": "application/json",
+              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400"
+            }
+          });
+        }
+        return new Response(JSON.stringify({ success: false, error: "Invalid credentials" }), { 
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Invalid request" }), { 
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
     }
 
     // Check Admin Status
     if (path === "/api/check-admin") {
       const cookie = req.headers.get("Cookie") || "";
-      return new Response(JSON.stringify({ isAdmin: cookie.includes("admin=true") }), {
-        headers: { "Content-Type": "application/json" }
+      return new Response(JSON.stringify({ 
+        isAdmin: cookie.includes("admin=true") 
+      }), {
+        headers: { 
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store"
+        }
       });
     }
 
@@ -70,65 +134,144 @@ export default {
       return new Response(JSON.stringify({ success: true }), {
         headers: { 
           "Content-Type": "application/json",
-          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/"
         }
       });
     }
 
-    // GET list barang
+    // GET list barang with cache control
     if (path === "/api/list") {
-      const data = await env.KATALOG.get("items");
-      return new Response(data || "[]", {
-        headers: { 
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache"
-        },
-      });
+      try {
+        const data = await env.KATALOG.get("items");
+        return new Response(data || "[]", {
+          headers: { 
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache"
+          },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Failed to load data" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
     }
 
-    // POST tambah barang (hanya admin)
+    // POST tambah barang (admin only) with validation
     if (path === "/api/tambah" && req.method === "POST") {
-      const cookie = req.headers.get("Cookie") || "";
-      if (!cookie.includes("admin=true")) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      try {
+        const cookie = req.headers.get("Cookie") || "";
+        if (!cookie.includes("admin=true")) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+            status: 401,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const body = await req.json();
+        
+        // Robust validation
+        if (!body.nama || typeof body.nama !== 'string' || body.nama.trim().length === 0) {
+          return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { 
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        
+        if (!body.harga || isNaN(body.harga) || body.harga <= 0) {
+          return new Response(JSON.stringify({ error: "Harga tidak valid" }), { 
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        
+        if (!body.satuan || typeof body.satuan !== 'string' || body.satuan.trim().length === 0) {
+          return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { 
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        
+        if (!body.base64 || typeof body.base64 !== 'string' || !body.base64.startsWith('data:image/')) {
+          return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { 
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+
+        const item = { 
+          ...body,
+          id: Date.now().toString(),
+          timestamp: Date.now(),
+          nama: body.nama.trim(),
+          satuan: body.satuan.trim(),
+          harga: Number(body.harga)
+        };
+
+        items.push(item);
+
+        await env.KATALOG.put("items", JSON.stringify(items));
+        return new Response(JSON.stringify({ success: true, id: item.id }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error adding item:", error);
+        return new Response(JSON.stringify({ error: "Internal server error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
       }
-
-      const body = await req.json();
-      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-
-      const item = { 
-        ...body, 
-        id: Date.now().toString(),
-        timestamp: Date.now()
-      };
-      items.push(item);
-
-      await env.KATALOG.put("items", JSON.stringify(items));
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
-    // POST hapus barang (hanya admin)
+    // POST hapus barang (admin only) with validation
     if (path === "/api/hapus" && req.method === "POST") {
-      const cookie = req.headers.get("Cookie") || "";
-      if (!cookie.includes("admin=true")) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      try {
+        const cookie = req.headers.get("Cookie") || "";
+        if (!cookie.includes("admin=true")) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+            status: 401,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const id = url.searchParams.get("id");
+        if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+          return new Response(JSON.stringify({ error: "ID tidak valid" }), { 
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+        const updated = items.filter(item => item.id !== id);
+        
+        if (items.length === updated.length) {
+          return new Response(JSON.stringify({ error: "Barang tidak ditemukan" }), { 
+            status: 404,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        await env.KATALOG.put("items", JSON.stringify(updated));
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error deleting item:", error);
+        return new Response(JSON.stringify({ error: "Internal server error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
       }
-
-      const id = url.searchParams.get("id");
-      if (!id) return new Response("Missing ID", { status: 400 });
-
-      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-      const updated = items.filter(item => item.id !== id);
-      await env.KATALOG.put("items", JSON.stringify(updated));
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
-    return new Response("404 Not Found", { status: 404 });
+    // Not found handler
+    return new Response(JSON.stringify({ error: "Not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" }
+    });
   }
 }
 
@@ -406,12 +549,20 @@ class BarangApp {
 
   async checkAdminStatus() {
     try {
-      const response = await fetch('/api/check-admin');
+      const response = await fetch('/api/check-admin', {
+        cache: 'no-store'
+      });
+      
+      if (!response.ok) throw new Error('Network response was not ok');
+      
       const { isAdmin } = await response.json();
       this.isAdmin = isAdmin;
       this.toggleAdminUI();
     } catch (error) {
       console.error('Error checking admin status:', error);
+      // Fallback to non-admin mode if check fails
+      this.isAdmin = false;
+      this.toggleAdminUI();
     }
   }
 
@@ -431,6 +582,11 @@ class BarangApp {
     const username = document.getElementById('loginUsername').value;
     const password = document.getElementById('loginPassword').value;
     
+    if (!username || !password) {
+      alert('Username dan password harus diisi');
+      return;
+    }
+    
     try {
       const response = await fetch('/api/login', {
         method: 'POST',
@@ -438,28 +594,35 @@ class BarangApp {
         body: JSON.stringify({ username, password })
       });
       
-      if (response.ok) {
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
         this.isAdmin = true;
         this.toggleAdminUI();
         this.loginModal.classList.add('hidden');
         this.loadBarang();
       } else {
-        alert('Login gagal! Periksa username dan password');
+        alert(data.error || 'Login gagal! Periksa username dan password');
       }
     } catch (error) {
       console.error('Login error:', error);
-      alert('Terjadi kesalahan saat login');
+      alert('Terjadi kesalahan saat login. Coba lagi nanti.');
     }
   }
 
   async handleLogout() {
     try {
-      await fetch('/api/logout');
-      this.isAdmin = false;
-      this.toggleAdminUI();
-      this.loadBarang();
+      const response = await fetch('/api/logout');
+      if (response.ok) {
+        this.isAdmin = false;
+        this.toggleAdminUI();
+        this.loadBarang();
+      } else {
+        throw new Error('Logout failed');
+      }
     } catch (error) {
       console.error('Logout error:', error);
+      alert('Gagal logout. Coba lagi.');
     }
   }
 
@@ -474,6 +637,13 @@ class BarangApp {
       return;
     }
 
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Ukuran gambar terlalu besar. Maksimal 5MB.');
+      this.fileInput.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       this.imagePreview.src = event.target.result;
@@ -483,6 +653,7 @@ class BarangApp {
     reader.onerror = () => {
       alert('Gagal membaca file. Coba lagi.');
       this.fileInput.value = '';
+      this.imagePreviewContainer.classList.add('hidden');
     };
     
     reader.readAsDataURL(file);
@@ -503,8 +674,21 @@ class BarangApp {
         gambar: this.form.gambar.files[0]
       };
 
-      if (!formData.nama || !formData.harga || !formData.satuan || !formData.gambar) {
-        throw new Error('Semua field harus diisi');
+      // Client-side validation
+      if (!formData.nama) {
+        throw new Error('Nama barang harus diisi');
+      }
+      
+      if (!formData.harga || isNaN(formData.harga) || formData.harga <= 0) {
+        throw new Error('Harga harus angka dan lebih dari 0');
+      }
+      
+      if (!formData.satuan) {
+        throw new Error('Satuan harus diisi');
+      }
+      
+      if (!formData.gambar) {
+        throw new Error('Gambar harus dipilih');
       }
 
       // Create a square version of the image
@@ -521,17 +705,41 @@ class BarangApp {
         })
       });
 
+      const responseData = await response.json();
+      
       if (!response.ok) {
-        throw new Error('Gagal menambahkan barang');
+        throw new Error(responseData.error || 'Gagal menambahkan barang');
       }
 
-      alert('Barang berhasil ditambahkan!');
+      // Show success message
+      const successMsg = document.createElement('div');
+      successMsg.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg';
+      successMsg.textContent = 'Barang berhasil ditambahkan!';
+      document.body.appendChild(successMsg);
+      
+      // Remove after 3 seconds
+      setTimeout(() => {
+        successMsg.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+        setTimeout(() => successMsg.remove(), 300);
+      }, 3000);
+
       this.form.reset();
       this.imagePreviewContainer.classList.add('hidden');
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
-      alert('Error: ' + error.message);
+      
+      // Show error message
+      const errorMsg = document.createElement('div');
+      errorMsg.className = 'fixed bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg';
+      errorMsg.textContent = 'Error: ' + error.message;
+      document.body.appendChild(errorMsg);
+      
+      // Remove after 5 seconds
+      setTimeout(() => {
+        errorMsg.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+        setTimeout(() => errorMsg.remove(), 300);
+      }, 5000);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Tambah Barang';
@@ -540,28 +748,45 @@ class BarangApp {
 
   createSquareImage(file) {
     return new Promise((resolve, reject) => {
+      // Validate file type
+      if (!file.type.match('image.*')) {
+        reject(new Error('File bukan gambar'));
+        return;
+      }
+
+      // Validate file size
+      if (file.size > 5 * 1024 * 1024) { // 5MB max
+        reject(new Error('Ukuran gambar terlalu besar (maks 5MB)'));
+        return;
+      }
+
       const reader = new FileReader();
+      
       reader.onload = (event) => {
         const img = new Image();
         img.src = event.target.result;
         
         img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          // Determine the size of the square (use the smaller dimension)
-          const size = Math.min(img.width, img.height);
-          canvas.width = size;
-          canvas.height = size;
-          
-          // Draw the image centered and cropped to square
-          const offsetX = (img.width - size) / 2;
-          const offsetY = (img.height - size) / 2;
-          ctx.drawImage(img, offsetX, offsetY, size, size, 0, 0, size, size);
-          
-          // Convert to base64 with quality 85%
-          const base64 = canvas.toDataURL('image/jpeg', 0.85);
-          resolve(base64);
+          try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Determine the size of the square (use the smaller dimension)
+            const size = Math.min(img.width, img.height);
+            canvas.width = size;
+            canvas.height = size;
+            
+            // Draw the image centered and cropped to square
+            const offsetX = (img.width - size) / 2;
+            const offsetY = (img.height - size) / 2;
+            ctx.drawImage(img, offsetX, offsetY, size, size, 0, 0, size, size);
+            
+            // Convert to base64 with quality 85%
+            const base64 = canvas.toDataURL('image/jpeg', 0.85);
+            resolve(base64);
+          } catch (error) {
+            reject(new Error('Gagal memproses gambar'));
+          }
         };
         
         img.onerror = () => {
@@ -573,12 +798,17 @@ class BarangApp {
         reject(new Error('Gagal membaca file'));
       };
       
+      reader.onabort = () => {
+        reject(new Error('Pembacaan file dibatalkan'));
+      };
+      
       reader.readAsDataURL(file);
     });
   }
 
   async loadBarang() {
     try {
+      // Show skeleton loading
       this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
         <div class="bg-white p-3 rounded shadow skeleton-item">
           <div class="skeleton-image"></div>
@@ -587,7 +817,11 @@ class BarangApp {
         </div>
       \`).join('');
 
-      const response = await fetch('/api/list?t=' + Date.now());
+      // Fetch with cache busting
+      const response = await fetch('/api/list?t=' + Date.now(), {
+        cache: 'no-cache'
+      });
+      
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
@@ -603,24 +837,56 @@ class BarangApp {
       this.processLoadingQueue();
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
+      
+      // Show error message in the catalog
+      this.katalog.innerHTML = \`
+        <div class="col-span-2 text-center py-4">
+          <p class="text-red-500">Gagal memuat data: \${this.escapeHtml(error.message)}</p>
+          <button onclick="app.loadBarang()" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition">
+            Coba Lagi
+          </button>
+        </div>
+      \`;
     }
   }
 
   processLoadingQueue() {
-    const endIndex = Math.min(
-      this.currentLoadingIndex + this.loadingBatchSize,
-      this.loadingQueue.length
-    );
-
-    for (let i = this.currentLoadingIndex; i < endIndex; i++) {
-      this.addItemToDOM(this.loadingQueue[i], i);
-    }
-
-    this.currentLoadingIndex = endIndex;
-
-    if (this.currentLoadingIndex < this.loadingQueue.length) {
-      setTimeout(() => this.processLoadingQueue(), 100);
+    // Use requestIdleCallback if available for better performance
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback((deadline) => {
+        while (this.currentLoadingIndex < this.loadingQueue.length && deadline.timeRemaining() > 0) {
+          const endIndex = Math.min(
+            this.currentLoadingIndex + this.loadingBatchSize,
+            this.loadingQueue.length
+          );
+          
+          for (let i = this.currentLoadingIndex; i < endIndex; i++) {
+            this.addItemToDOM(this.loadingQueue[i], i);
+          }
+          
+          this.currentLoadingIndex = endIndex;
+        }
+        
+        if (this.currentLoadingIndex < this.loadingQueue.length) {
+          requestIdleCallback(() => this.processLoadingQueue());
+        }
+      });
+    } else {
+      // Fallback for browsers without requestIdleCallback
+      const endIndex = Math.min(
+        this.currentLoadingIndex + this.loadingBatchSize,
+        this.loadingQueue.length
+      );
+      
+      for (let i = this.currentLoadingIndex; i < endIndex; i++) {
+        this.addItemToDOM(this.loadingQueue[i], i);
+      }
+      
+      this.currentLoadingIndex = endIndex;
+      
+      if (this.currentLoadingIndex < this.loadingQueue.length) {
+        setTimeout(() => this.processLoadingQueue(), 100);
+      }
     }
   }
 
@@ -635,6 +901,9 @@ class BarangApp {
     itemElement.style.animationDelay = \`\${index * 0.05}s\`;
     itemElement.setAttribute('data-id', escapedId);
     
+    // Fallback image in case of error
+    const fallbackImage = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2YzZjRmNiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjNjY2IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTAiPkdhbWJhciB0aWRhayBkYXBhdCBkaXRlbXBha2FuPC90ZXh0Pjwvc3ZnPg==';
+    
     itemElement.innerHTML = \`
       <div class="image-container">
         <img 
@@ -643,6 +912,7 @@ class BarangApp {
           class="loading" 
           loading="lazy"
           onload="this.classList.remove('loading'); this.classList.add('loaded')"
+          onerror="this.onerror=null;this.src='\${fallbackImage}';this.classList.remove('loading');this.classList.add('loaded')"
         >
       </div>
       <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
@@ -660,14 +930,43 @@ class BarangApp {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
-      if (!response.ok) throw new Error('Gagal menghapus barang');
+      const response = await fetch('/api/hapus?id=' + encodeURIComponent(id), { 
+        method: 'POST' 
+      });
       
-      alert('Barang berhasil dihapus');
+      const responseData = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(responseData.error || 'Gagal menghapus barang');
+      }
+      
+      // Show success message
+      const successMsg = document.createElement('div');
+      successMsg.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded shadow-lg';
+      successMsg.textContent = 'Barang berhasil dihapus!';
+      document.body.appendChild(successMsg);
+      
+      // Remove after 3 seconds
+      setTimeout(() => {
+        successMsg.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+        setTimeout(() => successMsg.remove(), 300);
+      }, 3000);
+
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
-      alert('Error: ' + error.message);
+      
+      // Show error message
+      const errorMsg = document.createElement('div');
+      errorMsg.className = 'fixed bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg';
+      errorMsg.textContent = 'Error: ' + error.message;
+      document.body.appendChild(errorMsg);
+      
+      // Remove after 5 seconds
+      setTimeout(() => {
+        errorMsg.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+        setTimeout(() => errorMsg.remove(), 300);
+      }, 5000);
     }
   }
 
@@ -682,6 +981,10 @@ class BarangApp {
   }
 }
 
+// Initialize the app
 const app = new BarangApp();
 window.app = app;
+
+// Add to global scope for button onclick handlers
+window.hapusBarang = (id) => app.hapusBarang(id);
 `;
