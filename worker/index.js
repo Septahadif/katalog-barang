@@ -66,11 +66,13 @@ export default {
           contentType = "image/webp";
         }
 
-        // Versi yang diperbaiki
+        // GANTI kode yang lama dengan ini:
 const etag = await crypto.subtle.digest('SHA-1', imageBuffer)
   .then(hash => {
     const hashArray = Array.from(new Uint8Array(hash));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashArray
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
   });
         // Check If-None-Match header
         const ifNoneMatch = req.headers.get('If-None-Match');
