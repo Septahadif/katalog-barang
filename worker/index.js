@@ -2,389 +2,321 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname;
-    const ip = req.headers.get('cf-connecting-ip') || 'unknown';
-    const userAgent = req.headers.get('user-agent') || 'unknown';
 
-    // Log all incoming requests
-    await this.logToKv(env, {
-      type: 'request',
-      method: req.method,
-      path: path,
-      ip: ip,
-      userAgent: userAgent,
-      timestamp: Date.now()
-    });
-
-    try {
-      // Serve static files
-      if (path === "/" || path === "/index.html") {
-        return new Response(INDEX_HTML, {
-          headers: { 
-            "Content-Type": "text/html; charset=utf-8",
-            "X-Content-Type-Options": "nosniff"
-          }
-        });
-      }
-
-      if (path === "/script.js") {
-        return new Response(SCRIPT_JS, {
-          headers: { 
-            "Content-Type": "application/javascript; charset=utf-8",
-            "X-Content-Type-Options": "nosniff"
-          }
-        });
-      }
-
-      // API endpoints
-      if (path.startsWith("/api/")) {
-        return await this.handleApiRequest(req, env, url, path, ip);
-      }
-
-      // Not found handler
-      return new Response("404 Not Found", { 
-        status: 404,
-        headers: { "Content-Type": "text/plain" }
-      });
-
-    } catch (error) {
-      // Global error handler
-      await this.logToKv(env, {
-        type: 'error',
-        message: error.message,
-        stack: error.stack,
-        path: path,
-        method: req.method,
-        timestamp: Date.now(),
-        severity: 'critical'
-      });
+    // Helper function to determine which KV namespace to use
+    const getKvInstance = (id = null) => {
+      // Strategy 1: Split by ID prefix
+      // if (id && id.startsWith('B-')) return env.KATALOG_2;
       
-      return new Response(JSON.stringify({ 
-        error: "Internal Server Error",
-        message: "An unexpected error occurred" 
-      }), { 
-        status: 500,
-        headers: { "Content-Type": "application/json" }
+      // Strategy 2: Split by hash distribution
+      if (id) {
+        const hash = Array.from(id).reduce((hash, char) => 
+          (hash << 5) - hash + char.charCodeAt(0), 0);
+        return hash % 2 === 0 ? env.KATALOG : env.KATALOG_2;
+      }
+      
+      // Default to primary KV if no ID provided
+      return env.KATALOG;
+    };
+
+    // Serve static assets
+    if (path === "/" || path === "/index.html") {
+      return new Response(INDEX_HTML, {
+        headers: { 
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "public, max-age=3600" 
+        },
       });
     }
-  },
 
-  async handleApiRequest(req, env, url, path, ip) {
-    // Image handling
+    if (path === "/script.js") {
+      return new Response(SCRIPT_JS, {
+        headers: { 
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "public, max-age=3600" 
+        },
+      });
+    }
+
+    // Image endpoint with cache and retry
     if (path.startsWith("/api/image/")) {
-      return await this.handleImageRequest(req, env, path);
-    }
+      const id = path.split('/')[3];
+      if (!id) return new Response("Missing ID", { status: 400 });
 
-    // Authentication endpoints
-    if (path === "/api/login" && req.method === "POST") {
-      return await this.handleLogin(req, env, ip);
-    }
+      // Check cache first
+      const cacheKey = new Request(url.toString());
+      const cached = await caches.default.match(cacheKey);
+      if (cached) return cached;
 
-    if (path === "/api/check-admin") {
-      return await this.handleCheckAdmin(req, env);
-    }
+      try {
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Image load timeout")), 5000)
+        );
 
-    if (path === "/api/logout") {
-      return await this.handleLogout(env, ip);
-    }
+        const kv = getKvInstance(id);
+        const itemsPromise = kv.get("items", { 
+          type: "json", 
+          cacheTtl: 3600 
+        });
 
-    // Data endpoints
-    if (path === "/api/list") {
-      return await this.handleListItems(env);
-    }
+        const items = await Promise.race([itemsPromise, timeoutPromise]);
+        const item = items.find(item => item.id === id);
+        
+        if (!item || !item.base64) {
+          return new Response("Image not found", { status: 404 });
+        }
 
-    if (path === "/api/tambah" && req.method === "POST") {
-      return await this.handleAddItem(req, env, ip);
-    }
+        // Process image
+        let base64Data = item.base64;
+        const base64Regex = /^data:image\/([a-zA-Z]*);base64,([^\"]*)$/;
+        
+        if (base64Regex.test(item.base64)) {
+          base64Data = item.base64.split(',')[1];
+        }
 
-    if (path === "/api/hapus" && req.method === "POST") {
-      return await this.handleDeleteItem(req, env, url, ip);
-    }
+        if (!base64Data || base64Data.length % 4 !== 0) {
+          return new Response("Invalid image data", { status: 400 });
+        }
 
-    // Admin-only log access
-    if (path === "/api/logs" && req.method === "GET") {
-      return await this.handleGetLogs(req, env);
-    }
+        const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        const response = new Response(imageBuffer, {
+          headers: { 
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "public, max-age=31536000, immutable"
+          }
+        });
 
-    // Unknown API endpoint
-    await this.logToKv(env, {
-      type: 'error',
-      message: 'API endpoint not found',
-      path: path,
-      method: req.method,
-      timestamp: Date.now()
-    });
-    
-    return new Response("404 API Endpoint Not Found", { status: 404 });
-  },
-
-  async handleImageRequest(req, env, path) {
-    const id = path.split('/')[3];
-    if (!id) {
-      await this.logToKv(env, {
-        type: 'error',
-        message: 'Missing image ID',
-        path: path,
-        timestamp: Date.now()
-      });
-      return new Response("Missing ID", { status: 400 });
-    }
-
-    const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-    const item = items.find(item => item.id === id);
-    
-    if (!item || !item.base64) {
-      await this.logToKv(env, {
-        type: 'error',
-        message: 'Image not found',
-        id: id,
-        timestamp: Date.now()
-      });
-      return new Response("Image not found", { status: 404 });
-    }
-
-    const base64Data = item.base64.split(',')[1] || item.base64;
-    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-    
-    return new Response(imageBuffer, {
-      headers: { 
-        "Content-Type": "image/jpeg",
-        "Cache-Control": "public, max-age=31536000, immutable"
+        // Store in cache
+        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+        return response;
+      } catch (error) {
+        console.error("Image load error:", error);
+        return new Response("Error loading image", { 
+          status: 500,
+          headers: { "Retry-After": "2" }
+        });
       }
-    });
-  },
+    }
 
-  async handleLogin(req, env, ip) {
-    const { username, password } = await req.json();
-    const isAdmin = username === "septa" && password === "septa2n2n";
-    
-    if (isAdmin) {
-      await this.logToKv(env, {
-        type: 'auth',
-        action: 'login_success',
-        username: username,
-        ip: ip,
-        timestamp: Date.now()
-      });
-      
+    // Login Admin
+    if (path === "/api/login" && req.method === "POST") {
+      try {
+        const { username, password } = await req.json();
+        const ADMIN_USERNAME = env.ADMIN_USERNAME || "admin";
+        const ADMIN_PASSWORD = env.ADMIN_PASSWORD || "password";
+        const isAdmin = username === ADMIN_USERNAME && password === ADMIN_PASSWORD;
+        
+        if (isAdmin) {
+          const token = crypto.randomUUID();
+          // Store token in primary KV
+          await env.KATALOG.put("admin_token", token);
+          
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { 
+              "Content-Type": "application/json",
+              "Set-Cookie": `admin=${token}; HttpOnly; Secure; SameSite=Strict; Path=/`
+            }
+          });
+        }
+        return new Response(JSON.stringify({ success: false }), { status: 401 });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Invalid request" }), { status: 400 });
+      }
+    }
+
+    // Check Admin Status
+    if (path === "/api/check-admin") {
+      try {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        // Check token from primary KV
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        return new Response(JSON.stringify({ isAdmin: token === validToken }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ isAdmin: false }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    // Logout
+    if (path === "/api/logout") {
       return new Response(JSON.stringify({ success: true }), {
         headers: { 
           "Content-Type": "application/json",
-          "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict; Path=/"
+          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
         }
       });
     }
-    
-    await this.logToKv(env, {
-      type: 'auth',
-      action: 'login_failed',
-      username: username,
-      ip: ip,
-      timestamp: Date.now(),
-      severity: 'warning'
-    });
-    
-    return new Response(JSON.stringify({ success: false }), { 
-      status: 401,
-      headers: { "Content-Type": "application/json" }
-    });
-  },
 
-  async handleCheckAdmin(req, env) {
-    const cookie = req.headers.get("Cookie") || "";
-    const isAdmin = cookie.includes("admin=true");
-    
-    await this.logToKv(env, {
-      type: 'auth',
-      action: 'check_admin',
-      isAdmin: isAdmin,
-      timestamp: Date.now()
-    });
-    
-    return new Response(JSON.stringify({ isAdmin }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  },
+    // GET list barang dengan pagination dan cache
+    if (path === "/api/list") {
+      try {
+        const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
+        
+        // Check cache
+        const cacheKey = new Request(url.toString());
+        const cached = await caches.default.match(cacheKey);
+        if (cached) return cached;
 
-  async handleLogout(env, ip) {
-    await this.logToKv(env, {
-      type: 'auth',
-      action: 'logout',
-      ip: ip,
-      timestamp: Date.now()
-    });
-    
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 
-        "Content-Type": "application/json",
-        "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/"
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("KV timeout")), 3000)
+        );
+        
+        // Get from both KV namespaces in parallel
+        const [items1, items2] = await Promise.all([
+          env.KATALOG.get("items", { type: "json", cacheTtl: 60 }) || [],
+          env.KATALOG_2.get("items", { type: "json", cacheTtl: 60 }) || []
+        ]);
+        
+        let items = [...items1, ...items2];
+        items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)); // Newest first
+        
+        const startIndex = (page - 1) * limit;
+        const endIndex = Math.min(startIndex + limit, items.length);
+        
+        const response = new Response(JSON.stringify({
+          items: items.slice(startIndex, endIndex),
+          total: items.length,
+          page,
+          limit,
+          hasMore: endIndex < items.length
+        }), {
+          headers: { 
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "public, max-age=60"
+          }
+        });
+
+        // Store in cache
+        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+        return response;
+      } catch (error) {
+        console.error("Error in /api/list:", error);
+        return new Response(JSON.stringify({
+          error: "Internal Server Error",
+          message: error.message
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json; charset=utf-8" }
+        });
       }
-    })
-  },
+    }
 
-  async handleListItems(env) {
-    const data = await env.KATALOG.get("items");
-    const items = data ? JSON.parse(data) : [];
-    
-    await this.logToKv(env, {
-      type: 'data',
-      action: 'list_items',
-      itemCount: items.length,
-      timestamp: Date.now()
-    });
-    
-    return new Response(JSON.stringify(items), {
-      headers: { 
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache"
+    // POST tambah barang
+    if (path === "/api/tambah" && req.method === "POST") {
+      try {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        if (token !== validToken) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+        }
+
+        const body = await req.json();
+        
+        if (!body.nama || typeof body.nama !== "string" || body.nama.trim().length === 0) {
+          return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { status: 400 });
+        }
+        
+        if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) {
+          return new Response(JSON.stringify({ error: "Harga harus angka positif" }), { status: 400 });
+        }
+        
+        if (!body.satuan || typeof body.satuan !== "string" || body.satuan.trim().length === 0) {
+          return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { status: 400 });
+        }
+        
+        if (!body.base64 || typeof body.base64 !== "string" || !body.base64.startsWith("data:image/")) {
+          return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { status: 400 });
+        }
+
+        // Generate new ID and determine which KV to use
+        const newId = `B-${crypto.randomUUID()}`; // Prefix B- for KATALOG_2
+        const kv = getKvInstance(newId);
+        
+        const items = JSON.parse(await kv.get("items") || "[]");
+
+        const item = { 
+          ...body,
+          id: newId,
+          timestamp: Date.now(),
+          nama: body.nama.trim(),
+          satuan: body.satuan.trim(),
+          harga: Number(body.harga)
+        };
+        
+        items.push(item);
+
+        await kv.put("items", JSON.stringify(items));
+        
+        // Invalidate cache
+        ctx.waitUntil(caches.default.delete("/api/list"));
+        
+        return new Response(JSON.stringify({ success: true, id: item.id }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error adding item:", error);
+        return new Response(JSON.stringify({ 
+          error: "Failed to add item", 
+          details: error.message 
+        }), { status: 500 });
       }
-    });
-  },
-
-  async handleAddItem(req, env, ip) {
-    const cookie = req.headers.get("Cookie") || "";
-    if (!cookie.includes("admin=true")) {
-      await this.logToKv(env, {
-        type: 'auth',
-        action: 'unauthorized_access',
-        endpoint: 'tambah_barang',
-        ip: ip,
-        timestamp: Date.now(),
-        severity: 'warning'
-      });
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
     }
 
-    const body = await req.json();
-    if (!body.nama || !body.harga || !body.satuan || !body.base64) {
-      await this.logToKv(env, {
-        type: 'error',
-        message: 'Invalid item data',
-        data: body,
-        timestamp: Date.now()
-      });
-      return new Response(JSON.stringify({ error: "Invalid data" }), { 
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
+    // POST hapus barang
+    if (path === "/api/hapus" && req.method === "POST") {
+      try {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        if (token !== validToken) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+        }
+
+        const { id } = await req.json();
+        if (!id) return new Response("Missing ID", { status: 400 });
+
+        const kv = getKvInstance(id);
+        const items = JSON.parse(await kv.get("items") || "[]");
+        const updated = items.filter(item => item.id !== id);
+        await kv.put("items", JSON.stringify(updated));
+        
+        // Invalidate cache
+        ctx.waitUntil(Promise.all([
+          caches.default.delete("/api/list"),
+          caches.default.delete(new Request(new URL("/api/image/" + id, req.url).toString()))
+        ]));
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error deleting item:", error);
+        return new Response(JSON.stringify({ 
+          error: "Failed to delete item",
+          details: error.message 
+        }), { status: 500 });
+      }
     }
 
-    const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-    const item = { 
-      ...body, 
-      id: Date.now().toString(),
-      timestamp: Date.now()
-    };
-    items.push(item);
-
-    await env.KATALOG.put("items", JSON.stringify(items));
-    
-    await this.logToKv(env, {
-      type: 'data',
-      action: 'add_item',
-      itemId: item.id,
-      itemName: body.nama,
-      timestamp: Date.now()
-    });
-    
-    return new Response(JSON.stringify({ success: true, id: item.id }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  },
-
-  async handleDeleteItem(req, env, url, ip) {
-    const cookie = req.headers.get("Cookie") || "";
-    if (!cookie.includes("admin=true")) {
-      await this.logToKv(env, {
-        type: 'auth',
-        action: 'unauthorized_access',
-        endpoint: 'hapus_barang',
-        ip: ip,
-        timestamp: Date.now(),
-        severity: 'warning'
-      });
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    const id = url.searchParams.get("id");
-    if (!id) {
-      await this.logToKv(env, {
-        type: 'error',
-        message: 'Missing ID for deletion',
-        timestamp: Date.now()
-      });
-      return new Response(JSON.stringify({ error: "Missing ID" }), { 
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-    const itemToDelete = items.find(item => item.id === id);
-    const updated = items.filter(item => item.id !== id);
-    await env.KATALOG.put("items", JSON.stringify(updated));
-
-    if (itemToDelete) {
-      await this.logToKv(env, {
-        type: 'data',
-        action: 'delete_item',
-        itemId: id,
-        itemName: itemToDelete.nama,
-        timestamp: Date.now()
-      });
-    }
-
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  },
-
-  async handleGetLogs(req, env) {
-    const cookie = req.headers.get("Cookie") || "";
-    if (!cookie.includes("admin=true")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    const logs = await this.getLogs(env);
-    return new Response(JSON.stringify(logs), {
-      headers: { "Content-Type": "application/json" }
-    });
-  },
-
-  async logToKv(env, logData) {
-    try {
-      const logs = JSON.parse(await env.KATALOG.get("logs") || "[]");
-      logs.push({
-        ...logData,
-        logId: crypto.randomUUID()
-      });
-      
-      // Keep only the last 1000 logs
-      const trimmedLogs = logs.slice(-1000);
-      await env.KATALOG.put("logs", JSON.stringify(trimmedLogs));
-    } catch (error) {
-      console.error('Failed to write logs:', error);
-    }
-  },
-
-  async getLogs(env) {
-    try {
-      const logs = await env.KATALOG.get("logs");
-      return logs ? JSON.parse(logs) : [];
-    } catch (error) {
-      console.error('Failed to read logs:', error);
-      return [];
-    }
+    return new Response("404 Not Found", { status: 404 });
   }
 }
+
+// ... (INDEX_HTML dan SCRIPT_JS tetap sama seperti sebelumnya)
+}
+
 const INDEX_HTML = `<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -393,7 +325,6 @@ const INDEX_HTML = `<!DOCTYPE html>
   <title>Katalog Barang</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <style>
-    /* Custom Styles */
     .login-modal-buttons {
       display: flex;
       gap: 10px;
@@ -433,13 +364,9 @@ const INDEX_HTML = `<!DOCTYPE html>
       border-radius: 0.375rem;
       font-size: 0.875rem;
     }
-    
-    /* Auto-capitalize input */
     .capitalize-input {
       text-transform: capitalize;
     }
-
-    /* Loading states */
     .skeleton-item {
       background-color: #f3f4f6;
       border-radius: 0.25rem;
@@ -463,8 +390,6 @@ const INDEX_HTML = `<!DOCTYPE html>
     .skeleton-text.medium {
       width: 80%;
     }
-
-    /* Image container */
     .image-container {
       position: relative;
       width: 100%;
@@ -488,8 +413,6 @@ const INDEX_HTML = `<!DOCTYPE html>
     .image-container img.loaded {
       opacity: 1;
     }
-
-    /* Animation */
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -497,6 +420,39 @@ const INDEX_HTML = `<!DOCTYPE html>
     .item-animate {
       animation: fadeIn 0.3s ease forwards;
       opacity: 0;
+    }
+    .retry-btn {
+      background-color: #3b82f6;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+      cursor: pointer;
+      border: none;
+    }
+    .retry-btn:hover {
+      background-color: #2563eb;
+    }
+    .loading-indicator {
+      text-align: center;
+      padding: 1rem;
+      color: #6b7280;
+    }
+    .error-message {
+      color: #ef4444;
+      text-align: center;
+      padding: 1rem;
+      background-color: #fee2e2;
+      border-radius: 0.375rem;
+      margin: 1rem 0;
+    }
+    .image-retry {
+      transition: all 0.3s ease;
+    }
+    .image-retry.hidden {
+      opacity: 0;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -511,7 +467,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
     </div>
     
-    <!-- Admin Login Modal -->
     <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white p-6 rounded-lg shadow-lg w-80">
         <h2 class="text-xl font-bold mb-4">Login Admin</h2>
@@ -536,13 +491,11 @@ const INDEX_HTML = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Admin Controls -->
     <div id="adminControls" class="hidden mb-6">
       <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
         Logout
       </button>
       
-      <!-- Form Tambah Barang -->
       <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
         <div>
           <label class="block mb-1 font-medium">Nama Barang</label>
@@ -575,8 +528,9 @@ const INDEX_HTML = `<!DOCTYPE html>
       </form>
     </div>
 
-    <!-- Katalog -->
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
+    <div id="loadingIndicator" class="loading-indicator hidden">Memuat...</div>
+    <div id="errorMessage" class="error-message hidden"></div>
   </div>
 
   <script src="script.js"></script>
@@ -587,10 +541,22 @@ const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
     this.isAdmin = false;
-    this.loadingQueue = [];
-    this.currentLoadingIndex = 0;
-    this.loadingBatchSize = 4;
+    this.currentPage = 1;
+    this.itemsPerPage = 10;
+    this.hasMoreItems = true;
+    this.isLoading = false;
+    this.maxRetries = 3;
+    this.retryCount = 0;
+    this.baseDelay = 1000;
+    this.abortController = null;
+    this.scrollDebounce = null;
+    this.imageLoadTimeouts = new Map();
     
+    this.observer = new IntersectionObserver(
+      (entries) => this.handleScroll(entries),
+      { threshold: 0.1 }
+    );
+
     this.initElements();
     this.initEventListeners();
     this.checkAdminStatus();
@@ -611,6 +577,8 @@ class BarangApp {
     this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
     this.namaInput = document.getElementById('nama');
     this.satuanInput = document.getElementById('satuan');
+    this.loadingIndicator = document.getElementById('loadingIndicator');
+    this.errorMessage = document.getElementById('errorMessage');
   }
 
   initEventListeners() {
@@ -624,6 +592,18 @@ class BarangApp {
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
     this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
+  }
+
+  cleanup() {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.observer.disconnect();
+    if (this.scrollDebounce) {
+      clearTimeout(this.scrollDebounce);
+    }
+    this.imageLoadTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.imageLoadTimeouts.clear();
   }
 
   autoCapitalize(event, force = false) {
@@ -659,12 +639,14 @@ class BarangApp {
 
   async checkAdminStatus() {
     try {
-      const response = await fetch('/api/check-admin');
+      const response = await this.fetchWithRetry('/api/check-admin');
       const { isAdmin } = await response.json();
       this.isAdmin = isAdmin;
       this.toggleAdminUI();
     } catch (error) {
       console.error('Error checking admin status:', error);
+      this.isAdmin = false;
+      this.toggleAdminUI();
     }
   }
 
@@ -679,13 +661,43 @@ class BarangApp {
     }
   }
 
+  async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    
+    this.abortController = new AbortController();
+    
+    try {
+      const timeoutId = setTimeout(() => this.abortController.abort(), 10000);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: this.abortController.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);
+      
+      return response;
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+      if (retries <= 0) throw error;
+      
+      const delay = Math.min(this.baseDelay * Math.pow(2, this.maxRetries - retries), 30000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return this.fetchWithRetry(url, options, retries - 1);
+    }
+  }
+
   async handleLogin(e) {
     e.preventDefault();
     const username = document.getElementById('loginUsername').value;
     const password = document.getElementById('loginPassword').value;
     
     try {
-      const response = await fetch('/api/login', {
+      const response = await this.fetchWithRetry('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -695,25 +707,33 @@ class BarangApp {
         this.isAdmin = true;
         this.toggleAdminUI();
         this.loginModal.classList.add('hidden');
-        this.loadBarang();
+        this.resetAndLoad();
       } else {
-        alert('Login gagal! Periksa username dan password');
+        this.showError('Login gagal! Periksa username dan password');
       }
     } catch (error) {
       console.error('Login error:', error);
-      alert('Terjadi kesalahan saat login');
+      this.showError('Terjadi kesalahan saat login. Silakan coba lagi.');
     }
   }
 
   async handleLogout() {
     try {
-      await fetch('/api/logout');
+      await this.fetchWithRetry('/api/logout');
       this.isAdmin = false;
       this.toggleAdminUI();
-      this.loadBarang();
+      this.resetAndLoad();
     } catch (error) {
       console.error('Logout error:', error);
+      this.showError('Terjadi kesalahan saat logout. Silakan coba lagi.');
     }
+  }
+
+  resetAndLoad() {
+    this.currentPage = 1;
+    this.hasMoreItems = true;
+    this.katalog.innerHTML = '';
+    this.loadBarang();
   }
 
   handleFileSelect(e) {
@@ -722,7 +742,13 @@ class BarangApp {
 
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
     if (!validTypes.includes(file.type)) {
-      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
+      this.showError('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
+      this.fileInput.value = '';
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) { // 2MB max
+      this.showError('Ukuran gambar terlalu besar. Maksimal 2MB.');
       this.fileInput.value = '';
       return;
     }
@@ -734,11 +760,19 @@ class BarangApp {
     };
     
     reader.onerror = () => {
-      alert('Gagal membaca file. Coba lagi.');
+      this.showError('Gagal membaca file. Coba lagi.');
       this.fileInput.value = '';
     };
     
     reader.readAsDataURL(file);
+  }
+
+  showError(message) {
+    this.errorMessage.textContent = message;
+    this.errorMessage.classList.remove('hidden');
+    setTimeout(() => {
+      this.errorMessage.classList.add('hidden');
+    }, 5000);
   }
 
   async handleSubmit(e) {
@@ -760,10 +794,9 @@ class BarangApp {
         throw new Error('Semua field harus diisi');
       }
 
-      // Create a square version of the image
       const base64 = await this.createSquareImage(formData.gambar);
 
-      const response = await fetch('/api/tambah', {
+      const response = await this.fetchWithRetry('/api/tambah', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -774,21 +807,37 @@ class BarangApp {
         })
       });
 
+      const result = await response.json();
       if (!response.ok) {
-        throw new Error('Gagal menambahkan barang');
+        throw new Error(result.error || 'Gagal menambahkan barang');
       }
 
-      alert('Barang berhasil ditambahkan!');
+      this.showError('Barang berhasil ditambahkan!');
       this.form.reset();
       this.imagePreviewContainer.classList.add('hidden');
-      await this.loadBarang();
+      
+      this.addNewItemToView({
+        ...result,
+        id: result.id,
+        nama: formData.nama,
+        harga: formData.harga,
+        satuan: formData.satuan,
+        base64,
+        timestamp: Date.now()
+      });
     } catch (error) {
       console.error('Error:', error);
-      alert('Error: ' + error.message);
+      this.showError('Error: ' + error.message);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Tambah Barang';
     }
+  }
+
+  addNewItemToView(item) {
+    const itemElement = this.createItemElement(item, 0);
+    this.katalog.prepend(itemElement);
+    itemElement.scrollIntoView({ behavior: 'smooth' });
   }
 
   createSquareImage(file) {
@@ -802,18 +851,31 @@ class BarangApp {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          // Determine the size of the square (use the smaller dimension)
-          const size = Math.min(img.width, img.height);
-          canvas.width = size;
-          canvas.height = size;
+          // Resize to max 800px while maintaining aspect ratio
+          const maxSize = 800;
+          let width = img.width;
+          let height = img.height;
           
-          // Draw the image centered and cropped to square
-          const offsetX = (img.width - size) / 2;
-          const offsetY = (img.height - size) / 2;
-          ctx.drawImage(img, offsetX, offsetY, size, size, 0, 0, size, size);
+          if (width > height) {
+            if (width > maxSize) {
+              height *= maxSize / width;
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width *= maxSize / height;
+              height = maxSize;
+            }
+          }
           
-          // Convert to base64 with quality 85%
-          const base64 = canvas.toDataURL('image/jpeg', 0.85);
+          canvas.width = width;
+          canvas.height = height;
+          
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Convert to WebP for smaller size (fallback to jpeg)
+          const base64 = canvas.toDataURL('image/webp', 0.85) || 
+                         canvas.toDataURL('image/jpeg', 0.85);
           resolve(base64);
         };
         
@@ -831,53 +893,101 @@ class BarangApp {
   }
 
   async loadBarang() {
-    try {
-      this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
-        <div class="bg-white p-3 rounded shadow skeleton-item">
-          <div class="skeleton-image"></div>
-          <div class="skeleton-text medium"></div>
-          <div class="skeleton-text short"></div>
-        </div>
-      \`).join('');
+    if (this.isLoading || !this.hasMoreItems) return;
+    this.isLoading = true;
+    this.loadingIndicator.classList.remove('hidden');
+    this.errorMessage.classList.add('hidden');
 
-      const response = await fetch('/api/list?t=' + Date.now());
-      if (!response.ok) throw new Error('Gagal memuat data');
+    try {
+      if (this.currentPage === 1) {
+        this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
+          <div class="bg-white p-3 rounded shadow skeleton-item">
+            <div class="skeleton-image"></div>
+            <div class="skeleton-text medium"></div>
+            <div class="skeleton-text short"></div>
+          </div>
+        \`).join('');
+      }
+
+      const response = await this.fetchWithRetry(
+        \`/api/list?\${new URLSearchParams({ 
+          page: this.currentPage, 
+          limit: this.itemsPerPage,
+          _: Date.now() 
+        })}\`
+      );
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(\`Invalid response: \${text.substring(0, 100)}\`);
+      }
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || \`HTTP error! status: \${response.status}\`);
+      }
+
+      const { items, total, page, limit, hasMore } = await response.json();
+      this.hasMoreItems = hasMore;
       
-      const items = await response.json();
-      
-      if (items.length === 0) {
-        this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
+      if (items.length === 0 && this.currentPage === 1) {
+        this.katalog.innerHTML = '<div class="text-center py-4 col-span-2"><p class="text-gray-500">Belum ada barang.</p></div>';
         return;
       }
 
-      this.katalog.innerHTML = '';
-      this.loadingQueue = items;
-      this.currentLoadingIndex = 0;
-      this.processLoadingQueue();
+      if (this.currentPage === 1) {
+        this.katalog.innerHTML = '';
+      }
+
+      items.forEach((item, index) => {
+        const itemElement = this.createItemElement(item, index);
+        this.katalog.appendChild(itemElement);
+        
+        if (index === items.length - 1) {
+          this.observer.observe(itemElement);
+        }
+      });
+
     } catch (error) {
-      console.error('Error:', error);
-      this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
+      console.error('Failed to load items:', error);
+      
+      let errorMsg = 'Gagal memuat data';
+      if (error.message.includes('Invalid response') && error.message.includes('<!DOCTYPE')) {
+        errorMsg = 'Terjadi kesalahan pada server (mengembalikan HTML bukan JSON)';
+      } else {
+        errorMsg = error.message || errorMsg;
+      }
+      
+      this.showError(errorMsg);
+      
+      if (this.currentPage > 1) {
+        this.currentPage--;
+      }
+    } finally {
+      this.isLoading = false;
+      this.loadingIndicator.classList.add('hidden');
     }
   }
 
-  processLoadingQueue() {
-    const endIndex = Math.min(
-      this.currentLoadingIndex + this.loadingBatchSize,
-      this.loadingQueue.length
-    );
-
-    for (let i = this.currentLoadingIndex; i < endIndex; i++) {
-      this.addItemToDOM(this.loadingQueue[i], i);
+  handleScroll(entries) {
+    if (this.isLoading || !this.hasMoreItems) return;
+    
+    if (this.scrollDebounce) {
+      clearTimeout(this.scrollDebounce);
     }
-
-    this.currentLoadingIndex = endIndex;
-
-    if (this.currentLoadingIndex < this.loadingQueue.length) {
-      setTimeout(() => this.processLoadingQueue(), 100);
-    }
+    
+    this.scrollDebounce = setTimeout(() => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          this.currentPage++;
+          this.loadBarang();
+        }
+      });
+    }, 200);
   }
 
-  addItemToDOM(item, index) {
+  createItemElement(item, index) {
     const escapedId = this.escapeHtml(item.id);
     const escapedNama = this.escapeHtml(item.nama);
     const escapedSatuan = this.escapeHtml(item.satuan);
@@ -889,14 +999,18 @@ class BarangApp {
     itemElement.setAttribute('data-id', escapedId);
     
     itemElement.innerHTML = \`
-      <div class="image-container">
+      <div class="image-container relative">
         <img 
           src="/api/image/\${escapedId}?t=\${item.timestamp || Date.now()}" 
           alt="\${escapedNama}" 
           class="loading" 
           loading="lazy"
-          onload="this.classList.remove('loading'); this.classList.add('loaded')"
+          onload="this.classList.remove('loading'); this.classList.add('loaded'); window.app.clearImageTimeout(this)"
+          onerror="window.app.handleImageError(this)"
         >
+        <div class="image-retry hidden absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <button class="retry-btn" onclick="window.app.retryLoadImage(this)">Muat Ulang</button>
+        </div>
       </div>
       <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
       <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
@@ -905,7 +1019,60 @@ class BarangApp {
         : ''}
     \`;
     
-    this.katalog.appendChild(itemElement);
+    // Set timeout untuk gambar
+    const img = itemElement.querySelector('img');
+    this.setImageTimeout(img);
+    
+    return itemElement;
+  }
+
+  setImageTimeout(img) {
+    const timeoutId = setTimeout(() => {
+      if (img && img.classList.contains('loading')) {
+        img.dispatchEvent(new Event('error'));
+      }
+    }, 8000); // Timeout 8 detik
+    
+    this.imageLoadTimeouts.set(img, timeoutId);
+  }
+
+  clearImageTimeout(img) {
+    if (this.imageLoadTimeouts.has(img)) {
+      clearTimeout(this.imageLoadTimeouts.get(img));
+      this.imageLoadTimeouts.delete(img);
+    }
+  }
+
+  handleImageError(imgElement) {
+    this.clearImageTimeout(imgElement);
+    const container = imgElement.parentElement;
+    const retryOverlay = container.querySelector('.image-retry');
+    if (retryOverlay) {
+      retryOverlay.classList.remove('hidden');
+      
+      // Coba muat ulang otomatis setelah 3 detik
+      setTimeout(() => {
+        if (retryOverlay && !retryOverlay.classList.contains('hidden')) {
+          this.retryLoadImage(retryOverlay.querySelector('.retry-btn'));
+        }
+      }, 3000);
+    }
+  }
+
+  retryLoadImage(button) {
+    const overlay = button.parentElement;
+    overlay.classList.add('hidden');
+    const img = overlay.previousElementSibling;
+    
+    if (!img) return;
+    
+    // Tambahkan timestamp baru untuk bypass cache
+    const newSrc = img.src.includes('?') ? 
+      \`\${img.src.split('?')[0]}?t=\${Date.now()}\` : 
+      \`\${img.src}?t=\${Date.now()}\`;
+    
+    img.src = newSrc;
+    this.setImageTimeout(img);
   }
 
   async hapusBarang(id) {
@@ -913,14 +1080,26 @@ class BarangApp {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
-      if (!response.ok) throw new Error('Gagal menghapus barang');
+      const response = await this.fetchWithRetry('/api/hapus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
       
-      alert('Barang berhasil dihapus');
-      await this.loadBarang();
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Gagal menghapus barang');
+      }
+      
+      this.showError('Barang berhasil dihapus');
+      
+      const itemElement = document.querySelector(\`[data-id="\${id}"]\`);
+      if (itemElement) {
+        itemElement.remove();
+      }
     } catch (error) {
       console.error('Error:', error);
-      alert('Error: ' + error.message);
+      this.showError('Error: ' + error.message);
     }
   }
 
@@ -937,4 +1116,10 @@ class BarangApp {
 
 const app = new BarangApp();
 window.app = app;
+
+window.addEventListener('beforeunload', () => {
+  if (window.app) {
+    window.app.cleanup();
+  }
+});
 `;
