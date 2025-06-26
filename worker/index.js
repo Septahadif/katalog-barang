@@ -50,12 +50,12 @@ async function deleteItemById(env, id) {
       const size = new TextEncoder().encode(JSON.stringify(items)).length;
 
       if (size >= MAX_SAFE_SIZE) {
-        // Simpan ke KATALOG2
-        const raw2 = await env.KATALOG2.get("items");
+        // Simpan ke KATALOG_2
+        const raw2 = await env.KATALOG_2.get("items");
         const items2 = raw2 ? JSON.parse(raw2) : [];
         items2.push(item);
-        await env.KATALOG2.put("items", JSON.stringify(items2));
-        return "KATALOG2";
+        await env.KATALOG_2.put("items", JSON.stringify(items2));
+        return "KATALOG_2";
       }
     }
 
@@ -64,12 +64,12 @@ async function deleteItemById(env, id) {
     await env.KATALOG.put("items", JSON.stringify(items));
     return "KATALOG";
   } catch (err) {
-    console.warn("Fallback ke KATALOG2 karena error:", err.message);
-    const raw2 = await env.KATALOG2.get("items");
+    console.warn("Fallback ke KATALOG_2 karena error:", err.message);
+    const raw2 = await env.KATALOG_2.get("items");
     const items2 = raw2 ? JSON.parse(raw2) : [];
     items2.push(item);
-    await env.KATALOG2.put("items", JSON.stringify(items2));
-    return "KATALOG2";
+    await env.KATALOG_2.put("items", JSON.stringify(items2));
+    return "KATALOG_2";
   }
 }
 
