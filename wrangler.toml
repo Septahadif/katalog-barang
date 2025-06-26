@@ -5,7 +5,8 @@ main = "worker/index.js"
 
 kv_namespaces = [
   { binding = "KATALOG", id = "552f4d9d18164051a77ad2e4ba52a43c" },
-  { binding = "KATALOG_2", id = "f968802342c74f1fa9c599b729664f24" }
+  { binding = "KATALOG_2", id = "f968802342c74f1fa9c599b729664f24" },
+  { binding = "LOGS", id = "fbfc8aacad8549c599fd7f03822fb2ad" }
 ]
 # wrangler.toml (wrangler v3.88.0^)
 [observability.logs]
