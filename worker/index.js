@@ -41,6 +41,7 @@ export default {
           }
         });
       } catch (error) {
+        console.error("Error loading image:", error);
         return new Response("Error loading image", { status: 500 });
       }
     }
@@ -55,12 +56,13 @@ export default {
           return new Response(JSON.stringify({ success: true }), {
             headers: { 
               "Content-Type": "application/json",
-              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
+              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict; Path=/"
             }
           });
         }
         return new Response(JSON.stringify({ success: false }), { status: 401 });
       } catch (error) {
+        console.error("Login error:", error);
         return new Response(JSON.stringify({ error: "Invalid request" }), { status: 400 });
       }
     }
@@ -73,6 +75,7 @@ export default {
           headers: { "Content-Type": "application/json" }
         });
       } catch (error) {
+        console.error("Check admin error:", error);
         return new Response(JSON.stringify({ isAdmin: false }), {
           headers: { "Content-Type": "application/json" }
         })
@@ -84,7 +87,7 @@ export default {
       return new Response(JSON.stringify({ success: true }), {
         headers: { 
           "Content-Type": "application/json",
-          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+          "Set-Cookie": "admin=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
         }
       });
     }
@@ -93,13 +96,17 @@ export default {
     if (path === "/api/list") {
       try {
         const data = await env.KATALOG.get("items");
-        return new Response(data || "[]", {
+        const items = data ? JSON.parse(data) : [];
+        // Sort items by timestamp (newest first)
+        items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        return new Response(JSON.stringify(items), {
           headers: { 
             "Content-Type": "application/json",
             "Cache-Control": "no-cache"
           },
         });
       } catch (error) {
+        console.error("List error:", error);
         return new Response(JSON.stringify([]), {
           headers: { 
             "Content-Type": "application/json",
@@ -118,6 +125,10 @@ export default {
         }
 
         const body = await req.json();
+        if (!body.nama || !body.harga || !body.satuan || !body.base64) {
+          return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 400 });
+        }
+
         const items = JSON.parse(await env.KATALOG.get("items") || "[]");
 
         const item = { 
@@ -125,13 +136,14 @@ export default {
           id: Date.now().toString(),
           timestamp: Date.now()
         };
-        items.push(item);
+        items.unshift(item); // Add to beginning of array to maintain reverse chronological order
 
         await env.KATALOG.put("items", JSON.stringify(items));
         return new Response(JSON.stringify({ success: true }), {
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
+        console.error("Add item error:", error);
         return new Response(JSON.stringify({ error: "Failed to add item" }), { status: 500 });
       }
     }
@@ -144,7 +156,7 @@ export default {
           return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
         }
 
-        const id = url.searchParams.get("id");
+        const { id } = await req.json();
         if (!id) return new Response("Missing ID", { status: 400 });
 
         const items = JSON.parse(await env.KATALOG.get("items") || "[]");
@@ -155,6 +167,7 @@ export default {
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
+        console.error("Delete error:", error);
         return new Response(JSON.stringify({ error: "Failed to delete item" }), { status: 500 });
       }
     }
@@ -370,6 +383,11 @@ const INDEX_HTML = `<!DOCTYPE html>
 
     <!-- Katalog -->
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
+    
+    <!-- Load More Button -->
+    <button id="loadMoreBtn" class="mt-4 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded hidden">
+      Muat Lebih Banyak
+    </button>
   </div>
 
   <script src="script.js"></script>
@@ -380,11 +398,11 @@ const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
     this.isAdmin = false;
-    this.loadingQueue = [];
-    this.currentLoadingIndex = 0;
-    this.loadingBatchSize = 4;
+    this.currentItems = [];
+    this.displayedItems = 0;
+    this.itemsPerLoad = 5;
     this.maxRetries = 3;
-    this.retryDelay = 1000; // 1 second
+    this.retryDelay = 1000;
     
     this.initElements();
     this.initEventListeners();
@@ -406,6 +424,7 @@ class BarangApp {
     this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
     this.namaInput = document.getElementById('nama');
     this.satuanInput = document.getElementById('satuan');
+    this.loadMoreBtn = document.getElementById('loadMoreBtn');
   }
 
   initEventListeners() {
@@ -419,6 +438,7 @@ class BarangApp {
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
     this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
+    this.loadMoreBtn.addEventListener('click', () => this.loadMoreItems());
   }
 
   autoCapitalize(event, force = false) {
@@ -479,7 +499,7 @@ class BarangApp {
   async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
     try {
       const response = await fetch(url, options);
-      if (!response?.ok) throw new Error("HTTP error! status: " + response?.status);
+      if (!response.ok) throw new Error("HTTP error! status: " + response.status);
       return response;
     } catch (error) {
       if (retries <= 0) throw error;
@@ -653,20 +673,40 @@ class BarangApp {
       const response = await this.fetchWithRetry('/api/list?t=' + Date.now());
       if (!response.ok) throw new Error('Gagal memuat data');
       
-      const items = await response.json();
+      this.currentItems = await response.json();
+      this.displayedItems = 0;
       
-      if (items.length === 0) {
+      if (this.currentItems.length === 0) {
         this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
+        this.loadMoreBtn.classList.add('hidden');
         return;
       }
 
       this.katalog.innerHTML = '';
-      this.loadingQueue = items;
-      this.currentLoadingIndex = 0;
-      this.processLoadingQueue();
+      this.loadMoreItems();
     } catch (error) {
       console.error('Error:', error);
       this.showErrorWithRetry('Gagal memuat data: ' + this.escapeHtml(error.message));
+    }
+  }
+
+  loadMoreItems() {
+    const endIndex = Math.min(
+      this.displayedItems + this.itemsPerLoad,
+      this.currentItems.length
+    );
+
+    for (let i = this.displayedItems; i < endIndex; i++) {
+      this.addItemToDOM(this.currentItems[i], i);
+    }
+
+    this.displayedItems = endIndex;
+
+    // Show/hide load more button
+    if (this.displayedItems < this.currentItems.length) {
+      this.loadMoreBtn.classList.remove('hidden');
+    } else {
+      this.loadMoreBtn.classList.add('hidden');
     }
   }
 
@@ -677,23 +717,7 @@ class BarangApp {
         <button class="retry-btn" onclick="app.loadBarang()">Coba Lagi</button>
       </div>
     \`;
-  }
-
-  processLoadingQueue() {
-    const endIndex = Math.min(
-      this.currentLoadingIndex + this.loadingBatchSize,
-      this.loadingQueue.length
-    );
-
-    for (let i = this.currentLoadingIndex; i < endIndex; i++) {
-      this.addItemToDOM(this.loadingQueue[i], i);
-    }
-
-    this.currentLoadingIndex = endIndex;
-
-    if (this.currentLoadingIndex < this.loadingQueue.length) {
-      setTimeout(() => this.processLoadingQueue(), 100);
-    }
+    this.loadMoreBtn.classList.add('hidden');
   }
 
   addItemToDOM(item, index) {
@@ -733,7 +757,12 @@ class BarangApp {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      const response = await this.fetchWithRetry('/api/hapus?id=' + id, { method: 'POST' });
+      const response = await this.fetchWithRetry('/api/hapus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      
       if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
