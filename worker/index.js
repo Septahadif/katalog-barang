@@ -39,6 +39,40 @@ async function deleteItemById(env, id) {
   return found;
 }
 
+   async function saveItemSmart(env, item) {
+  const MAX_SAFE_SIZE = 17_500_000; // ~70% dari 25MB
+  try {
+    const raw = await env.KATALOG.get("items");
+    let items = [];
+
+    if (raw) {
+      items = JSON.parse(raw);
+      const size = new TextEncoder().encode(JSON.stringify(items)).length;
+
+      if (size >= MAX_SAFE_SIZE) {
+        // Simpan ke KATALOG2
+        const raw2 = await env.KATALOG2.get("items");
+        const items2 = raw2 ? JSON.parse(raw2) : [];
+        items2.push(item);
+        await env.KATALOG2.put("items", JSON.stringify(items2));
+        return "KATALOG2";
+      }
+    }
+
+    // Simpan ke KATALOG
+    items.push(item);
+    await env.KATALOG.put("items", JSON.stringify(items));
+    return "KATALOG";
+  } catch (err) {
+    console.warn("Fallback ke KATALOG2 karena error:", err.message);
+    const raw2 = await env.KATALOG2.get("items");
+    const items2 = raw2 ? JSON.parse(raw2) : [];
+    items2.push(item);
+    await env.KATALOG2.put("items", JSON.stringify(items2));
+    return "KATALOG2";
+  }
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
@@ -210,53 +244,64 @@ export default {
     }
 
     if (path === "/api/tambah" && req.method === "POST") {
-      try {
-        const cookieHeader = req.headers.get("Cookie") || "";
-        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
-        const token = cookies.get("admin");
-        const validToken = await env.KATALOG.get("admin_token");
+  try {
+    // Validasi token admin
+    const cookieHeader = req.headers.get("Cookie") || "";
+    const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+    const token = cookies.get("admin");
+    const validToken = await env.KATALOG.get("admin_token");
 
-        if (token !== validToken) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-        }
-
-        const body = await req.json();
-        if (!body.nama || typeof body.nama !== "string" || body.nama.trim().length === 0) {
-          return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { status: 400 });
-        }
-        if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) {
-          return new Response(JSON.stringify({ error: "Harga harus angka positif" }), { status: 400 });
-        }
-        if (!body.satuan || typeof body.satuan !== "string" || body.satuan.trim().length === 0) {
-          return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { status: 400 });
-        }
-        if (!body.base64 || typeof body.base64 !== "string" || !body.base64.startsWith("data:image/")) {
-          return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { status: 400 });
-        }
-
-        const item = {
-          ...body,
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-          nama: body.nama.trim(),
-          satuan: body.satuan.trim(),
-          harga: Number(body.harga)
-        };
-
-        await saveItem(env, item);
-        ctx.waitUntil(caches.default.delete("/api/list"));
-
-        return new Response(JSON.stringify({ success: true, id: item.id }), {
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error) {
-        console.error("Error adding item:", error);
-        return new Response(JSON.stringify({
-          error: "Failed to add item",
-          details: error.message
-        }), { status: 500 });
-      }
+    if (token !== validToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
+
+    const body = await req.json();
+
+    // Validasi data
+    if (!body.nama || typeof body.nama !== "string" || body.nama.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { status: 400 });
+    }
+    if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) {
+      return new Response(JSON.stringify({ error: "Harga harus angka positif" }), { status: 400 });
+    }
+    if (!body.satuan || typeof body.satuan !== "string" || body.satuan.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { status: 400 });
+    }
+    if (!body.base64 || typeof body.base64 !== "string" || !body.base64.startsWith("data:image/")) {
+      return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { status: 400 });
+    }
+
+    const item = {
+      ...body,
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      nama: body.nama.trim(),
+      satuan: body.satuan.trim(),
+      harga: Number(body.harga)
+    };
+
+    // Simpan item dengan pengecekan ukuran namespace
+    const namespaceUsed = await saveItemSmart(env, item);
+
+    // Invalidate cache
+    ctx.waitUntil(caches.default.delete("/api/list"));
+
+    return new Response(JSON.stringify({
+      success: true,
+      id: item.id,
+      storedIn: namespaceUsed
+    }), {
+      headers: { "Content-Type": "application/json" },
+    });
+
+  } catch (error) {
+    console.error("Error adding item:", error);
+    return new Response(JSON.stringify({
+      error: "Failed to add item",
+      details: error.message
+    }), { status: 500 });
+  }
+}
 
     if (path === "/api/hapus" && req.method === "POST") {
       try {
