@@ -1,75 +1,91 @@
+// Fungsi utilitas
+async function getAllItems(env) {
+  const items1 = JSON.parse(await env.KATALOG.get("items") || "[]");
+  const items2 = JSON.parse(await env.KATALOG2.get("items") || "[]");
+  return [...items1, ...items2];
+}
+
+async function saveItem(env, item) {
+  try {
+    const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+    items.push(item);
+    await env.KATALOG.put("items", JSON.stringify(items));
+    return "KATALOG";
+  } catch (err) {
+    const items2 = JSON.parse(await env.KATALOG2.get("items") || "[]");
+    items2.push(item);
+    await env.KATALOG2.put("items", JSON.stringify(items2));
+    return "KATALOG2";
+  }
+}
+
+async function deleteItemById(env, id) {
+  let found = false;
+
+  const from1 = JSON.parse(await env.KATALOG.get("items") || "[]");
+  const filtered1 = from1.filter(item => item.id !== id);
+  if (filtered1.length !== from1.length) {
+    await env.KATALOG.put("items", JSON.stringify(filtered1));
+    found = true;
+  }
+
+  const from2 = JSON.parse(await env.KATALOG2.get("items") || "[]");
+  const filtered2 = from2.filter(item => item.id !== id);
+  if (filtered2.length !== from2.length) {
+    await env.KATALOG2.put("items", JSON.stringify(filtered2));
+    found = true;
+  }
+
+  return found;
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Helper function to determine which KV namespace to use
-    const getKvInstance = (id = null) => {
-      // Strategy 1: Split by ID prefix
-      // if (id && id.startsWith('B-')) return env.KATALOG_2;
-      
-      // Strategy 2: Split by hash distribution
-      if (id) {
-        const hash = Array.from(id).reduce((hash, char) => 
-          (hash << 5) - hash + char.charCodeAt(0), 0);
-        return hash % 2 === 0 ? env.KATALOG : env.KATALOG_2;
-      }
-      
-      // Default to primary KV if no ID provided
-      return env.KATALOG;
-    };
-
-    // Serve static assets
     if (path === "/" || path === "/index.html") {
       return new Response(INDEX_HTML, {
-        headers: { 
+        headers: {
           "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": "public, max-age=3600" 
+          "Cache-Control": "public, max-age=3600"
         },
       });
     }
 
     if (path === "/script.js") {
       return new Response(SCRIPT_JS, {
-        headers: { 
+        headers: {
           "Content-Type": "application/javascript; charset=utf-8",
-          "Cache-Control": "public, max-age=3600" 
+          "Cache-Control": "public, max-age=3600"
         },
       });
     }
 
-    // Image endpoint with cache and retry
     if (path.startsWith("/api/image/")) {
       const id = path.split('/')[3];
       if (!id) return new Response("Missing ID", { status: 400 });
 
-      // Check cache first
       const cacheKey = new Request(url.toString());
       const cached = await caches.default.match(cacheKey);
       if (cached) return cached;
 
       try {
-        const timeoutPromise = new Promise((_, reject) => 
+        const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Image load timeout")), 5000)
         );
 
-        const kv = getKvInstance(id);
-        const itemsPromise = kv.get("items", { 
-          type: "json", 
-          cacheTtl: 3600 
-        });
-
+        const itemsPromise = getAllItems(env);
         const items = await Promise.race([itemsPromise, timeoutPromise]);
+
         const item = items.find(item => item.id === id);
-        
         if (!item || !item.base64) {
           return new Response("Image not found", { status: 404 });
         }
 
-        // Process image
         let base64Data = item.base64;
         const base64Regex = /^data:image\/([a-zA-Z]*);base64,([^\"]*)$/;
-        
+
         if (base64Regex.test(item.base64)) {
           base64Data = item.base64.split(',')[1];
         }
@@ -80,39 +96,36 @@ export default {
 
         const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
         const response = new Response(imageBuffer, {
-          headers: { 
+          headers: {
             "Content-Type": "image/jpeg",
             "Cache-Control": "public, max-age=31536000, immutable"
           }
         });
 
-        // Store in cache
         ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
         return response;
       } catch (error) {
         console.error("Image load error:", error);
-        return new Response("Error loading image", { 
+        return new Response("Error loading image", {
           status: 500,
           headers: { "Retry-After": "2" }
         });
       }
     }
 
-    // Login Admin
     if (path === "/api/login" && req.method === "POST") {
       try {
         const { username, password } = await req.json();
-        const ADMIN_USERNAME = env.ADMIN_USERNAME || "admin";
-        const ADMIN_PASSWORD = env.ADMIN_PASSWORD || "password";
+        const ADMIN_USERNAME = env.ADMIN_USERNAME || "septa";
+        const ADMIN_PASSWORD = env.ADMIN_PASSWORD || "septa2n2n";
         const isAdmin = username === ADMIN_USERNAME && password === ADMIN_PASSWORD;
-        
+
         if (isAdmin) {
           const token = crypto.randomUUID();
-          // Store token in primary KV
           await env.KATALOG.put("admin_token", token);
-          
+
           return new Response(JSON.stringify({ success: true }), {
-            headers: { 
+            headers: {
               "Content-Type": "application/json",
               "Set-Cookie": `admin=${token}; HttpOnly; Secure; SameSite=Strict; Path=/`
             }
@@ -124,15 +137,13 @@ export default {
       }
     }
 
-    // Check Admin Status
     if (path === "/api/check-admin") {
       try {
         const cookieHeader = req.headers.get("Cookie") || "";
         const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
         const token = cookies.get("admin");
-        // Check token from primary KV
         const validToken = await env.KATALOG.get("admin_token");
-        
+
         return new Response(JSON.stringify({ isAdmin: token === validToken }), {
           headers: { "Content-Type": "application/json" }
         });
@@ -143,43 +154,34 @@ export default {
       }
     }
 
-    // Logout
     if (path === "/api/logout") {
       return new Response(JSON.stringify({ success: true }), {
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
         }
       });
     }
 
-    // GET list barang dengan pagination dan cache
     if (path === "/api/list") {
       try {
         const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10))
-        
-        // Check cache
+        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10));
+
         const cacheKey = new Request(url.toString());
         const cached = await caches.default.match(cacheKey);
         if (cached) return cached;
 
-        const timeoutPromise = new Promise((_, reject) => 
+        const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error("KV timeout")), 3000)
         );
-        
-        // Get from both KV namespaces in parallel
-        const [items1, items2] = await Promise.all([
-          env.KATALOG.get("items", { type: "json", cacheTtl: 60 }) || [],
-          env.KATALOG_2.get("items", { type: "json", cacheTtl: 60 }) || []
-        ]);
-        
-        let items = [...items1, ...items2];
-        items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)); // Newest first
-        
+
+        const items = await Promise.race([getAllItems(env), timeoutPromise]);
+        items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
         const startIndex = (page - 1) * limit;
         const endIndex = Math.min(startIndex + limit, items.length);
-        
+
         const response = new Response(JSON.stringify({
           items: items.slice(startIndex, endIndex),
           total: items.length,
@@ -187,13 +189,12 @@ export default {
           limit,
           hasMore: endIndex < items.length
         }), {
-          headers: { 
+          headers: {
             "Content-Type": "application/json; charset=utf-8",
             "Cache-Control": "public, max-age=60"
           }
         });
 
-        // Store in cache
         ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
         return response;
       } catch (error) {
@@ -208,78 +209,62 @@ export default {
       }
     }
 
-    // POST tambah barang
     if (path === "/api/tambah" && req.method === "POST") {
       try {
         const cookieHeader = req.headers.get("Cookie") || "";
         const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
         const token = cookies.get("admin");
         const validToken = await env.KATALOG.get("admin_token");
-        
+
         if (token !== validToken) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
         }
 
         const body = await req.json();
-        
         if (!body.nama || typeof body.nama !== "string" || body.nama.trim().length === 0) {
           return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { status: 400 });
         }
-        
         if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) {
           return new Response(JSON.stringify({ error: "Harga harus angka positif" }), { status: 400 });
         }
-        
         if (!body.satuan || typeof body.satuan !== "string" || body.satuan.trim().length === 0) {
           return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { status: 400 });
         }
-        
         if (!body.base64 || typeof body.base64 !== "string" || !body.base64.startsWith("data:image/")) {
           return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { status: 400 });
         }
 
-        // Generate new ID and determine which KV to use
-        const newId = `B-${crypto.randomUUID()}`; // Prefix B- for KATALOG_2
-        const kv = getKvInstance(newId);
-        
-        const items = JSON.parse(await kv.get("items") || "[]");
-
-        const item = { 
+        const item = {
           ...body,
-          id: newId,
+          id: crypto.randomUUID(),
           timestamp: Date.now(),
           nama: body.nama.trim(),
           satuan: body.satuan.trim(),
           harga: Number(body.harga)
         };
-        
-        items.push(item);
 
-        await kv.put("items", JSON.stringify(items));
-        
-        // Invalidate cache
+        await saveItem(env, item);
         ctx.waitUntil(caches.default.delete("/api/list"));
-        
+
         return new Response(JSON.stringify({ success: true, id: item.id }), {
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
         console.error("Error adding item:", error);
-        return new Response(JSON.stringify({ 
-          error: "Failed to add item", 
-          details: error.message 
+        return new Response(JSON.stringify({
+          error: "Failed to add item",
+          details: error.message
         }), { status: 500 });
       }
     }
 
-    // POST hapus barang
     if (path === "/api/hapus" && req.method === "POST") {
       try {
         const cookieHeader = req.headers.get("Cookie") || "";
         const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
         const token = cookies.get("admin");
         const validToken = await env.KATALOG.get("admin_token");
-        
+
         if (token !== validToken) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
         }
@@ -287,12 +272,11 @@ export default {
         const { id } = await req.json();
         if (!id) return new Response("Missing ID", { status: 400 });
 
-        const kv = getKvInstance(id);
-        const items = JSON.parse(await kv.get("items") || "[]");
-        const updated = items.filter(item => item.id !== id);
-        await kv.put("items", JSON.stringify(updated));
-        
-        // Invalidate cache
+        const found = await deleteItemById(env, id);
+        if (!found) {
+          return new Response(JSON.stringify({ error: "ID not found" }), { status: 404 });
+        }
+
         ctx.waitUntil(Promise.all([
           caches.default.delete("/api/list"),
           caches.default.delete(new Request(new URL("/api/image/" + id, req.url).toString()))
@@ -303,9 +287,9 @@ export default {
         });
       } catch (error) {
         console.error("Error deleting item:", error);
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           error: "Failed to delete item",
-          details: error.message 
+          details: error.message
         }), { status: 500 });
       }
     }
