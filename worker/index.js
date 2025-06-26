@@ -186,75 +186,59 @@ export default {
       }
     }
 
-    // POST tambah barang
-    i// POST tambah barang - perbaikan
+   // POST tambah barang - perbaikan lebih robust
 if (path === "/api/tambah" && req.method === "POST") {
   try {
-    // Cek authorization
+    // 1. Cek Authorization
     const cookieHeader = req.headers.get("Cookie") || "";
     const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
     const token = cookies.get("admin");
     const validToken = await env.KATALOG.get("admin_token");
     
     if (token !== validToken) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+      return new Response(JSON.stringify({ 
+        error: "Unauthorized",
+        message: "Token admin tidak valid"
+      }), { 
         status: 401,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // Parse body
+    // 2. Parse Request Body
     let body;
     try {
       body = await req.json();
+      if (!body) throw new Error("Empty request body");
     } catch (e) {
-      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      return new Response(JSON.stringify({ 
+        error: "Invalid request",
+        message: "Data format tidak valid"
+      }), {
         status: 400,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // Validasi input
-    if (!body.nama || typeof body.nama !== "string" || body.nama.trim().length === 0) {
-      return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { 
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    
-    if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) {
-      return new Response(JSON.stringify({ error: "Harga harus angka positif" }), { 
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    
-    if (!body.satuan || typeof body.satuan !== "string" || body.satuan.trim().length === 0) {
-      return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { 
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    
-    if (!body.base64 || typeof body.base64 !== "string" || !body.base64.startsWith("data:image/")) {
-      return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { 
+    // 3. Validasi Data
+    const errors = [];
+    if (!body.nama?.trim()) errors.push("Nama barang harus diisi");
+    if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) errors.push("Harga harus angka positif");
+    if (!body.satuan?.trim()) errors.push("Satuan harus diisi");
+    if (!body.base64 || !body.base64.startsWith("data:image/")) errors.push("Gambar tidak valid");
+
+    if (errors.length > 0) {
+      return new Response(JSON.stringify({ 
+        error: "Validation error",
+        messages: errors
+      }), { 
         status: 400,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // Dapatkan items dari KV
-    let items;
-    try {
-      const itemsData = await env.KATALOG.get("items");
-      items = itemsData ? JSON.parse(itemsData) : [];
-    } catch (e) {
-      console.error("Error parsing items:", e);
-      items = [];
-    }
-
-    // Buat item baru
-    const newItem = { 
+    // 4. Proses Data
+    const newItem = {
       id: crypto.randomUUID(),
       nama: body.nama.trim(),
       harga: Number(body.harga),
@@ -263,40 +247,42 @@ if (path === "/api/tambah" && req.method === "POST") {
       timestamp: Date.now()
     };
 
-    // Tambahkan item baru
-    items.push(newItem);
-
-    // Simpan ke KV
-    try {
-      await env.KATALOG.put("items", JSON.stringify(items));
-      
-      // Invalidate cache
-      ctx.waitUntil(caches.default.delete("/api/list"));
-      
-      return new Response(JSON.stringify({ 
-        success: true, 
-        id: newItem.id 
-      }), {
-        headers: { 
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store"
-        },
-      });
-    } catch (e) {
-      console.error("Error saving to KV:", e);
-      return new Response(JSON.stringify({ 
-        error: "Failed to save item", 
-        details: "KV storage error"
-      }), { 
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
+    // 5. Simpan ke KV Storage dengan retry
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        const existingItems = await env.KATALOG.get("items", "json") || [];
+        const updatedItems = [...existingItems, newItem];
+        
+        await env.KATALOG.put("items", JSON.stringify(updatedItems));
+        
+        // Invalidate cache
+        ctx.waitUntil(caches.default.delete("/api/list"));
+        
+        return new Response(JSON.stringify({ 
+          success: true,
+          id: newItem.id
+        }), {
+          headers: { 
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store"
+          }
+        });
+      } catch (kvError) {
+        retries--;
+        if (retries === 0) {
+          console.error("KV Storage error:", kvError);
+          throw new Error("Gagal menyimpan data setelah 3 percobaan");
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
   } catch (error) {
-    console.error("Error in /api/tambah:", error);
-    return new Response(JSON.stringify({ 
+    console.error("Server error:", error);
+    return new Response(JSON.stringify({
       error: "Internal Server Error",
-      message: error.message
+      message: error.message,
+      stack: env.ENVIRONMENT === "development" ? error.stack : undefined
     }), {
       status: 500,
       headers: { "Content-Type": "application/json" }
@@ -462,12 +448,37 @@ const INDEX_HTML = `<!DOCTYPE html>
       border-radius: 0.375rem;
       margin: 1rem 0;
     }
-    .success-message {
-  color: #065f46;
-  text-align: center;
-  padding: 1rem;
+    .spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.success-message {
   background-color: #d1fae5;
-  border-radius: 0.375rem;
+  color: #065f46;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
+
+.error-message {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
+
+.info-message {
+  background-color: #dbeafe;
+  color: #1e40af;
+  padding: 1rem;
+  border-radius: 0.5rem;
   margin: 1rem 0;
 }
   </style>
@@ -797,77 +808,85 @@ class BarangApp {
 
   try {
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Memproses...';
+    submitBtn.innerHTML = '<span class="spinner">⏳</span> Memproses...';
 
+    // 1. Validasi Client-Side
     const formData = {
-      nama: this.form.nama.value.trim(),
-      harga: this.form.harga.value.trim(),
-      satuan: this.form.satuan.value.trim(),
-      gambar: this.form.gambar.files[0]
+      nama: this.namaInput.value.trim(),
+      harga: this.hargaInput.value.trim(),
+      satuan: this.satuanInput.value.trim(),
+      gambar: this.fileInput.files[0]
     };
 
-    // Validasi client-side
-    if (!formData.nama || !formData.harga || !formData.satuan || !formData.gambar) {
-      throw new Error('Semua field harus diisi');
+    const errors = [];
+    if (!formData.nama) errors.push("Nama barang harus diisi");
+    if (!formData.harga || isNaN(formData.harga) || Number(formData.harga) <= 0) errors.push("Harga harus angka positif");
+    if (!formData.satuan) errors.push("Satuan harus diisi");
+    if (!formData.gambar) errors.push("Gambar harus diupload");
+
+    if (errors.length > 0) {
+      throw new Error(errors.join(", "));
     }
 
-    // Konversi gambar ke base64
+    // 2. Proses Gambar
     const base64 = await this.createSquareImage(formData.gambar);
 
-    // Kirim ke server
-    const response = await this.fetchWithRetry('/api/tambah', {
+    // 3. Kirim ke Server
+    const response = await fetch('/api/tambah', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
       body: JSON.stringify({
         nama: formData.nama,
         harga: Number(formData.harga),
         satuan: formData.satuan,
-        base64
-      })
+        base64: base64
+      }),
+      credentials: 'include' // Untuk mengirim cookies
     });
 
-    // Handle response
+    // 4. Handle Response
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Gagal menambahkan barang');
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg = errorData.message || 
+                      errorData.error || 
+                      `HTTP error! status: ${response.status}`;
+      throw new Error(errorMsg);
     }
 
     const result = await response.json();
-    
-    // Reset form
+
+    // 5. Reset Form & Update UI
     this.form.reset();
     this.imagePreviewContainer.classList.add('hidden');
-    
-    // Tambahkan item ke view
     this.addNewItemToView({
       id: result.id,
       nama: formData.nama,
       harga: formData.harga,
       satuan: formData.satuan,
-      base64,
+      base64: base64,
       timestamp: Date.now()
     });
 
-    this.showError('Barang berhasil ditambahkan!', 'success');
+    this.showMessage('Barang berhasil ditambahkan!', 'success');
+
   } catch (error) {
-    console.error('Error:', error);
-    this.showError('Gagal menambahkan barang: ' + error.message);
+    console.error('Submit error:', error);
+    this.showMessage(`Gagal: ${error.message}`, 'error');
+    
+    // Auto-retry untuk error 503
+    if (error.message.includes('503')) {
+      setTimeout(() => {
+        this.showMessage('Mencoba lagi...', 'info');
+        this.handleSubmit(e);
+      }, 2000);
+    }
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Tambah Barang';
   }
-}
-
-// Tambahkan method showError untuk menangani pesan sukses/error
-showError(message, type = 'error') {
-  this.errorMessage.textContent = message;
-  this.errorMessage.className = type === 'error' ? 
-    'error-message' : 'success-message';
-  this.errorMessage.classList.remove('hidden');
-  
-  setTimeout(() => {
-    this.errorMessage.classList.add('hidden');
-  }, 5000);
 }
 
   addNewItemToView(item) {
