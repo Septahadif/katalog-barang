@@ -41,7 +41,6 @@ export default {
           }
         });
       } catch (error) {
-        console.error("Error loading image:", error);
         return new Response("Error loading image", { status: 500 });
       }
     }
@@ -56,13 +55,12 @@ export default {
           return new Response(JSON.stringify({ success: true }), {
             headers: { 
               "Content-Type": "application/json",
-              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict; Path=/"
+              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
             }
           });
         }
         return new Response(JSON.stringify({ success: false }), { status: 401 });
       } catch (error) {
-        console.error("Login error:", error);
         return new Response(JSON.stringify({ error: "Invalid request" }), { status: 400 });
       }
     }
@@ -75,7 +73,6 @@ export default {
           headers: { "Content-Type": "application/json" }
         });
       } catch (error) {
-        console.error("Check admin error:", error);
         return new Response(JSON.stringify({ isAdmin: false }), {
           headers: { "Content-Type": "application/json" }
         })
@@ -87,27 +84,48 @@ export default {
       return new Response(JSON.stringify({ success: true }), {
         headers: { 
           "Content-Type": "application/json",
-          "Set-Cookie": "admin=; Path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
         }
       });
     }
 
-    // GET list barang
+    // GET list barang with pagination
     if (path === "/api/list") {
       try {
         const data = await env.KATALOG.get("items");
-        const items = data ? JSON.parse(data) : [];
-        // Sort items by timestamp (newest first)
+        const items = JSON.parse(data || "[]");
+        
+        // Sort by newest first
         items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        return new Response(JSON.stringify(items), {
+        
+        // Get pagination parameters
+        const page = parseInt(url.searchParams.get("page")) || 1;
+        const limit = parseInt(url.searchParams.get("limit")) || 5;
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + limit;
+        
+        const paginatedItems = items.slice(startIndex, endIndex);
+        
+        return new Response(JSON.stringify({
+          items: paginatedItems,
+          total: items.length,
+          page,
+          limit,
+          hasMore: endIndex < items.length
+        }), {
           headers: { 
             "Content-Type": "application/json",
             "Cache-Control": "no-cache"
           },
         });
       } catch (error) {
-        console.error("List error:", error);
-        return new Response(JSON.stringify([]), {
+        return new Response(JSON.stringify({
+          items: [],
+          total: 0,
+          page: 1,
+          limit: 5,
+          hasMore: false
+        }), {
           headers: { 
             "Content-Type": "application/json",
             "Cache-Control": "no-cache"
@@ -136,15 +154,15 @@ export default {
           id: Date.now().toString(),
           timestamp: Date.now()
         };
-        items.unshift(item); // Add to beginning of array to maintain reverse chronological order
+        items.push(item);
 
         await env.KATALOG.put("items", JSON.stringify(items));
-        return new Response(JSON.stringify({ success: true }), {
+        return new Response(JSON.stringify({ success: true, id: item.id }), {
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
-        console.error("Add item error:", error);
-        return new Response(JSON.stringify({ error: "Failed to add item" }), { status: 500 });
+        console.error("Error adding item:", error);
+        return new Response(JSON.stringify({ error: "Failed to add item", details: error.message }), { status: 500 });
       }
     }
 
@@ -167,8 +185,8 @@ export default {
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
-        console.error("Delete error:", error);
-        return new Response(JSON.stringify({ error: "Failed to delete item" }), { status: 500 });
+        console.error("Error deleting item:", error);
+        return new Response(JSON.stringify({ error: "Failed to delete item", details: error.message }), { status: 500 });
       }
     }
 
@@ -304,6 +322,26 @@ const INDEX_HTML = `<!DOCTYPE html>
     .retry-btn:hover {
       background-color: #2563eb;
     }
+
+    /* Load more button */
+    .load-more-btn {
+      background-color: #10b981;
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.375rem;
+      font-size: 1rem;
+      margin: 1rem auto;
+      cursor: pointer;
+      border: none;
+      display: block;
+    }
+    .load-more-btn:hover {
+      background-color: #059669;
+    }
+    .load-more-btn:disabled {
+      background-color: #d1d5db;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -383,11 +421,7 @@ const INDEX_HTML = `<!DOCTYPE html>
 
     <!-- Katalog -->
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
-    
-    <!-- Load More Button -->
-    <button id="loadMoreBtn" class="mt-4 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded hidden">
-      Muat Lebih Banyak
-    </button>
+    <button id="loadMoreBtn" class="load-more-btn hidden">Muat Lebih Banyak</button>
   </div>
 
   <script src="script.js"></script>
@@ -398,9 +432,10 @@ const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
     this.isAdmin = false;
-    this.currentItems = [];
-    this.displayedItems = 0;
-    this.itemsPerLoad = 5;
+    this.currentPage = 1;
+    this.itemsPerPage = 5;
+    this.hasMoreItems = true;
+    this.isLoading = false;
     this.maxRetries = 3;
     this.retryDelay = 1000;
     
@@ -438,7 +473,7 @@ class BarangApp {
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
     this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
-    this.loadMoreBtn.addEventListener('click', () => this.loadMoreItems());
+    this.loadMoreBtn.addEventListener('click', () => this.loadMore());
   }
 
   autoCapitalize(event, force = false) {
@@ -524,7 +559,7 @@ class BarangApp {
         this.isAdmin = true;
         this.toggleAdminUI();
         this.loginModal.classList.add('hidden');
-        this.loadBarang();
+        this.resetAndLoad();
       } else {
         alert('Login gagal! Periksa username dan password');
       }
@@ -539,11 +574,18 @@ class BarangApp {
       await this.fetchWithRetry('/api/logout');
       this.isAdmin = false;
       this.toggleAdminUI();
-      this.loadBarang();
+      this.resetAndLoad();
     } catch (error) {
       console.error('Logout error:', error);
       alert('Terjadi kesalahan saat logout. Silakan coba lagi.');
     }
+  }
+
+  resetAndLoad() {
+    this.currentPage = 1;
+    this.hasMoreItems = true;
+    this.katalog.innerHTML = '';
+    this.loadBarang();
   }
 
   handleFileSelect(e) {
@@ -604,14 +646,15 @@ class BarangApp {
         })
       });
 
+      const result = await response.json();
       if (!response.ok) {
-        throw new Error('Gagal menambahkan barang');
+        throw new Error(result.error || 'Gagal menambahkan barang');
       }
 
       alert('Barang berhasil ditambahkan!');
       this.form.reset();
       this.imagePreviewContainer.classList.add('hidden');
-      await this.loadBarang();
+      this.resetAndLoad();
     } catch (error) {
       console.error('Error:', error);
       alert('Error: ' + error.message);
@@ -661,60 +704,74 @@ class BarangApp {
   }
 
   async loadBarang() {
-    try {
-      this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
-        <div class="bg-white p-3 rounded shadow skeleton-item">
-          <div class="skeleton-image"></div>
-          <div class="skeleton-text medium"></div>
-          <div class="skeleton-text short"></div>
-        </div>
-      \`).join('');
+    if (this.isLoading || !this.hasMoreItems) return;
+    this.isLoading = true;
 
-      const response = await this.fetchWithRetry('/api/list?t=' + Date.now());
+    try {
+      // Show skeleton loading only for first page
+      if (this.currentPage === 1) {
+        this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
+          <div class="bg-white p-3 rounded shadow skeleton-item">
+            <div class="skeleton-image"></div>
+            <div class="skeleton-text medium"></div>
+            <div class="skeleton-text short"></div>
+          </div>
+        \`).join('');
+      }
+
+      const response = await this.fetchWithRetry(\`/api/list?page=\${this.currentPage}&limit=\${this.itemsPerPage}&t=\${Date.now()}\`);
       if (!response.ok) throw new Error('Gagal memuat data');
       
-      this.currentItems = await response.json();
-      this.displayedItems = 0;
+      const { items, total, page, limit, hasMore } = await response.json();
+      this.hasMoreItems = hasMore;
       
-      if (this.currentItems.length === 0) {
-        this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
+      if (items.length === 0 && this.currentPage === 1) {
+        this.katalog.innerHTML = '<div class="text-center py-4 col-span-2"><p class="text-gray-500">Belum ada barang.</p></div>';
         this.loadMoreBtn.classList.add('hidden');
         return;
       }
 
-      this.katalog.innerHTML = '';
-      this.loadMoreItems();
+      // Clear skeleton loading for first page
+      if (this.currentPage === 1) {
+        this.katalog.innerHTML = '';
+      }
+
+      items.forEach((item, index) => {
+        this.addItemToDOM(item, (this.currentPage - 1) * this.itemsPerPage + index);
+      });
+
+      // Show/hide load more button
+      if (this.hasMoreItems) {
+        this.loadMoreBtn.classList.remove('hidden');
+      } else {
+        this.loadMoreBtn.classList.add('hidden');
+      }
     } catch (error) {
       console.error('Error:', error);
       this.showErrorWithRetry('Gagal memuat data: ' + this.escapeHtml(error.message));
+    } finally {
+      this.isLoading = false;
     }
   }
 
-  loadMoreItems() {
-    const endIndex = Math.min(
-      this.displayedItems + this.itemsPerLoad,
-      this.currentItems.length
-    );
-
-    for (let i = this.displayedItems; i < endIndex; i++) {
-      this.addItemToDOM(this.currentItems[i], i);
-    }
-
-    this.displayedItems = endIndex;
-
-    // Show/hide load more button
-    if (this.displayedItems < this.currentItems.length) {
-      this.loadMoreBtn.classList.remove('hidden');
-    } else {
-      this.loadMoreBtn.classList.add('hidden');
-    }
+  async loadMore() {
+    if (this.isLoading) return;
+    
+    this.currentPage++;
+    this.loadMoreBtn.disabled = true;
+    this.loadMoreBtn.textContent = 'Memuat...';
+    
+    await this.loadBarang();
+    
+    this.loadMoreBtn.disabled = false;
+    this.loadMoreBtn.textContent = 'Muat Lebih Banyak';
   }
 
   showErrorWithRetry(message) {
     this.katalog.innerHTML = \`
       <div class="text-center py-4 col-span-2">
         <p class="text-red-500 mb-2">\${message}</p>
-        <button class="retry-btn" onclick="app.loadBarang()">Coba Lagi</button>
+        <button class="retry-btn" onclick="app.resetAndLoad()">Coba Lagi</button>
       </div>
     \`;
     this.loadMoreBtn.classList.add('hidden');
@@ -763,10 +820,13 @@ class BarangApp {
         body: JSON.stringify({ id })
       });
       
-      if (!response.ok) throw new Error('Gagal menghapus barang');
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Gagal menghapus barang');
+      }
       
       alert('Barang berhasil dihapus');
-      await this.loadBarang();
+      this.resetAndLoad();
     } catch (error) {
       console.error('Error:', error);
       alert('Error: ' + error.message);
