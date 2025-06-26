@@ -606,6 +606,7 @@ class BarangApp {
     this.satuanInput = document.getElementById('satuan');
     this.loadingIndicator = document.getElementById('loadingIndicator');
     this.errorMessage = document.getElementById('errorMessage');
+    this.hargaInput = document.getElementById('harga');
   }
 
   initEventListeners() {
@@ -801,8 +802,22 @@ class BarangApp {
       this.errorMessage.classList.add('hidden');
     }, 5000);
   }
+  
+  showMessage(message, type = 'info') {
+  const messageElement = document.createElement('div');
+  messageElement.className = `${type}-message`;
+  messageElement.textContent = message;
+  
+  // Tambahkan pesan sebelum form
+  this.form.parentNode.insertBefore(messageElement, this.form);
+  
+  // Hapus setelah 5 detik
+  setTimeout(() => {
+    messageElement.remove();
+  }, 5000);
+}
 
-  async handleSubmit(e) {
+async handleSubmit(e) {
   e.preventDefault();
   const submitBtn = this.form.querySelector('button[type="submit"]');
 
@@ -810,7 +825,7 @@ class BarangApp {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner">⏳</span> Memproses...';
 
-    // 1. Validasi Client-Side
+    // Validasi Client-Side
     const formData = {
       nama: this.namaInput.value.trim(),
       harga: this.hargaInput.value.trim(),
@@ -820,19 +835,20 @@ class BarangApp {
 
     const errors = [];
     if (!formData.nama) errors.push("Nama barang harus diisi");
-    if (!formData.harga || isNaN(formData.harga) || Number(formData.harga) <= 0) errors.push("Harga harus angka positif");
+    if (!formData.harga || isNaN(formData.harga) errors.push("Harga harus berupa angka");
+    if (Number(formData.harga) <= 0) errors.push("Harga harus lebih dari 0");
     if (!formData.satuan) errors.push("Satuan harus diisi");
     if (!formData.gambar) errors.push("Gambar harus diupload");
 
     if (errors.length > 0) {
-      throw new Error(errors.join(", "));
+      throw new Error(errors.join("\n"));
     }
 
-    // 2. Proses Gambar
+    // Proses Gambar
     const base64 = await this.createSquareImage(formData.gambar);
 
-    // 3. Kirim ke Server
-    const response = await fetch('/api/tambah', {
+    // Kirim ke Server
+    const response = await this.fetchWithRetry('/api/tambah', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -844,27 +860,18 @@ class BarangApp {
         satuan: formData.satuan,
         base64: base64
       }),
-      credentials: 'include' // Untuk mengirim cookies
+      credentials: 'include'
     });
 
-    // 4. Handle Response
-    // Di dalam method handleSubmit (script.js)
-// Ganti dengan:
-if (!response.ok) {
-  const errorText = await response.text();
-  let errorMsg = 'Request failed with status ' + response.status;
-  try {
-    const errorData = JSON.parse(errorText);
-    errorMsg = errorData.message || errorData.error || errorMsg;
-  } catch (e) {
-    errorMsg = errorMsg + ': ' + errorText.substring(0, 100);
-  }
-  throw new Error(errorMsg);
-}
+    // Handle Response
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Request failed with status ${response.status}`);
+    }
 
     const result = await response.json();
 
-    // 5. Reset Form & Update UI
+    // Reset Form & Update UI
     this.form.reset();
     this.imagePreviewContainer.classList.add('hidden');
     this.addNewItemToView({
@@ -880,8 +887,7 @@ if (!response.ok) {
 
   } catch (error) {
     console.error('Submit error:', error);
-    // Ganti dengan:
-      this.showMessage("Gagal: " + error.message, "error");
+    this.showMessage("Gagal: " + error.message, "error");
     
     // Auto-retry untuk error 503
     if (error.message.includes('503')) {
