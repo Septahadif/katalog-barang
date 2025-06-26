@@ -1,284 +1,291 @@
-export default { async fetch(req, env, ctx) { const url = new URL(req.url); const path = url.pathname;
+export default {
+  async fetch(req, env, ctx) {
+    const url = new URL(req.url);
+    const path = url.pathname;
 
-// Serve static assets
-if (path === "/" || path === "/index.html") {
-  return new Response(INDEX_HTML, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "public, max-age=3600"
-    },
-  });
-}
-
-if (path === "/script.js") {
-  return new Response(SCRIPT_JS, {
-    headers: {
-      "Content-Type": "application/javascript; charset=utf-8",
-      "Cache-Control": "public, max-age=3600"
-    },
-  });
-}
-
-// Image endpoint with cache and retry
-if (path.startsWith("/api/image/")) {
-  const id = path.split('/')[3];
-  if (!id) return new Response("Missing ID", { status: 400 });
-
-  const cacheKey = new Request(url.toString());
-  const cached = await caches.default.match(cacheKey);
-  if (cached) return cached;
-
-  try {
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Image load timeout")), 5000)
-    );
-
-    const itemsPromise = env.KATALOG.get("items", {
-      type: "json",
-      cacheTtl: 3600
-    });
-
-    const items = await Promise.race([itemsPromise, timeoutPromise]);
-    const item = items.find(item => item.id === id);
-
-    if (!item || !item.base64) {
-      return new Response("Image not found", { status: 404 });
+    // Serve static assets
+    if (path === "/" || path === "/index.html") {
+      return new Response(INDEX_HTML, {
+        headers: { 
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "public, max-age=3600" 
+        },
+      });
     }
 
-    let base64Data = item.base64;
-    const base64Regex = /^data:image\/([a-zA-Z]+);base64,(.*)$/;
-    const match = base64Data.match(base64Regex);
-
-    if (!match || !match[2]) {
-      return new Response("Invalid image data", { status: 400 });
+    if (path === "/script.js") {
+      return new Response(SCRIPT_JS, {
+        headers: { 
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "public, max-age=3600" 
+        },
+      });
     }
 
-    base64Data = match[2];
-    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-    const response = new Response(imageBuffer, {
-      headers: {
-        "Content-Type": "image/jpeg",
-        "Cache-Control": "public, max-age=31536000, immutable"
+    // Image endpoint with cache and retry
+    if (path.startsWith("/api/image/")) {
+      const id = path.split('/')[3];
+      if (!id) return new Response("Missing ID", { status: 400 });
+
+      // Check cache first
+      const cacheKey = new Request(url.toString());
+      const cached = await caches.default.match(cacheKey);
+      if (cached) return cached;
+
+      try {
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Image load timeout")), 5000)
+        );
+
+        const itemsPromise = env.KATALOG.get("items", { 
+          type: "json", 
+          cacheTtl: 3600 
+        });
+
+        const items = await Promise.race([itemsPromise, timeoutPromise]);
+        const item = items.find(item => item.id === id);
+        
+        if (!item || !item.base64) {
+          return new Response("Image not found", { status: 404 });
+        }
+
+        // Process image
+        let base64Data = item.base64;
+        const base64Regex = /^data:image\/([a-zA-Z]*);base64,([^\"]*)$/;
+        
+        if (base64Regex.test(item.base64)) {
+          base64Data = item.base64.split(',')[1];
+        }
+
+        if (!base64Data || base64Data.length % 4 !== 0) {
+          return new Response("Invalid image data", { status: 400 });
+        }
+
+        const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        const response = new Response(imageBuffer, {
+          headers: { 
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "public, max-age=31536000, immutable"
+          }
+        });
+
+        // Store in cache
+        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+        return response;
+      } catch (error) {
+        console.error("Image load error:", error);
+        return new Response("Error loading image", { 
+          status: 500,
+          headers: { "Retry-After": "2" }
+        });
       }
-    });
+    }
 
-    ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
-    return response;
-  } catch (error) {
-    console.error("Image load error:", error);
-    return new Response("Error loading image", {
-      status: 500,
-      headers: { "Retry-After": "2" }
-    });
-  }
-}
+    // Login Admin
+    if (path === "/api/login" && req.method === "POST") {
+      try {
+        const { username, password } = await req.json();
+        const ADMIN_USERNAME = env.ADMIN_USERNAME || "septa";
+        const ADMIN_PASSWORD = env.ADMIN_PASSWORD || "septa2n2n";
+        const isAdmin = username === ADMIN_USERNAME && password === ADMIN_PASSWORD;
+        
+        if (isAdmin) {
+          const token = crypto.randomUUID();
+          await env.KATALOG.put("admin_token", token);
+          
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { 
+              "Content-Type": "application/json",
+              "Set-Cookie": `admin=${token}; HttpOnly; Secure; SameSite=Strict; Path=/`
+            }
+          });
+        }
+        return new Response(JSON.stringify({ success: false }), { status: 401 });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Invalid request" }), { status: 400 });
+      }
+    }
 
-// Admin Login
-if (path === "/api/login" && req.method === "POST") {
-  try {
-    const { username, password } = await req.json();
-    const ADMIN_USERNAME = env.ADMIN_USERNAME || "septa";
-    const ADMIN_PASSWORD = env.ADMIN_PASSWORD || "septa2n2n";
+    // Check Admin Status
+    if (path === "/api/check-admin") {
+      try {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        return new Response(JSON.stringify({ isAdmin: token === validToken }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ isAdmin: false }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
 
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-      const token = crypto.randomUUID();
-      await env.KATALOG.put("admin_token", token);
-
+    // Logout
+    if (path === "/api/logout") {
       return new Response(JSON.stringify({ success: true }), {
-        headers: {
+        headers: { 
           "Content-Type": "application/json",
-          "Set-Cookie": `admin=${token}; HttpOnly; Secure; SameSite=Strict; Path=/`
+          "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
         }
       });
     }
 
-    return new Response(JSON.stringify({ success: false }), { status: 401 });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: "Invalid request" }), { status: 400 });
-  }
-}
+    // GET list barang dengan pagination dan cache
+    if (path === "/api/list") {
+      try {
+        const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10));
+        
+        // Check cache
+        const cacheKey = new Request(url.toString());
+        const cached = await caches.default.match(cacheKey);
+        if (cached) return cached;
 
-// Check Admin Status
-if (path === "/api/check-admin") {
-  try {
-    const cookieHeader = req.headers.get("Cookie") || "";
-    const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
-    const token = cookies.get("admin");
-    const validToken = await env.KATALOG.get("admin_token");
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("KV timeout")), 3000)
+        );
+        
+        const itemsPromise = env.KATALOG.get("items", { type: "json", cacheTtl: 60 });
+        const data = await Promise.race([itemsPromise, timeoutPromise]);
+        
+        let items = Array.isArray(data) ? data : [];
+        items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        
+        const startIndex = (page - 1) * limit;
+        const endIndex = Math.min(startIndex + limit, items.length);
+        
+        const response = new Response(JSON.stringify({
+          items: items.slice(startIndex, endIndex),
+          total: items.length,
+          page,
+          limit,
+          hasMore: endIndex < items.length
+        }), {
+          headers: { 
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "public, max-age=60"
+          }
+        });
 
-    return new Response(JSON.stringify({ isAdmin: token === validToken }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ isAdmin: false }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-// Logout
-if (path === "/api/logout") {
-  return new Response(JSON.stringify({ success: true }), {
-    headers: {
-      "Content-Type": "application/json",
-      "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
-    }
-  });
-}
-
-// List Items
-if (path === "/api/list") {
-  try {
-    const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10));
-
-    const cacheKey = new Request(url.toString());
-    const cached = await caches.default.match(cacheKey);
-    if (cached) return cached;
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("KV timeout")), 3000)
-    );
-
-    const itemsPromise = env.KATALOG.get("items", { type: "json", cacheTtl: 60 });
-    const data = await Promise.race([itemsPromise, timeoutPromise]);
-    let items = Array.isArray(data) ? data : [];
-    items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
-    const startIndex = (page - 1) * limit;
-    const endIndex = Math.min(startIndex + limit, items.length);
-
-    const response = new Response(JSON.stringify({
-      items: items.slice(startIndex, endIndex),
-      total: items.length,
-      page,
-      limit,
-      hasMore: endIndex < items.length
-    }), {
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "public, max-age=60"
+        // Store in cache
+        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+        return response;
+      } catch (error) {
+        console.error("Error in /api/list:", error);
+        return new Response(JSON.stringify({
+          error: "Internal Server Error",
+          message: error.message
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json; charset=utf-8" }
+        });
       }
-    });
+    }
 
-    ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
-    return response;
-  } catch (error) {
-    console.error("Error in /api/list:", error);
-    return new Response(JSON.stringify({
-      error: "Internal Server Error",
-      message: error.message
-    }), {
-      status: 500,
-      headers: { "Content-Type": "application/json; charset=utf-8" }
-    });
+    // POST tambah barang
+    if (path === "/api/tambah" && req.method === "POST") {
+      try {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        if (token !== validToken) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+        }
+
+        const body = await req.json();
+        
+        if (!body.nama || typeof body.nama !== "string" || body.nama.trim().length === 0) {
+          return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { status: 400 });
+        }
+        
+        if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) {
+          return new Response(JSON.stringify({ error: "Harga harus angka positif" }), { status: 400 });
+        }
+        
+        if (!body.satuan || typeof body.satuan !== "string" || body.satuan.trim().length === 0) {
+          return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { status: 400 });
+        }
+        
+        if (!body.base64 || typeof body.base64 !== "string" || !body.base64.startsWith("data:image/")) {
+          return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { status: 400 });
+        }
+
+        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+
+        const item = { 
+          ...body,
+          id: crypto.randomUUID(),
+          timestamp: Date.now(),
+          nama: body.nama.trim(),
+          satuan: body.satuan.trim(),
+          harga: Number(body.harga)
+        };
+        
+        items.push(item);
+
+        await env.KATALOG.put("items", JSON.stringify(items));
+        
+        // Invalidate cache
+        ctx.waitUntil(caches.default.delete("/api/list"));
+        
+        return new Response(JSON.stringify({ success: true, id: item.id }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error adding item:", error);
+        return new Response(JSON.stringify({ 
+          error: "Failed to add item", 
+          details: error.message 
+        }), { status: 500 });
+      }
+    }
+
+    // POST hapus barang
+    if (path === "/api/hapus" && req.method === "POST") {
+      try {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        if (token !== validToken) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+        }
+
+        const { id } = await req.json();
+        if (!id) return new Response("Missing ID", { status: 400 });
+
+        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+        const updated = items.filter(item => item.id !== id);
+        await env.KATALOG.put("items", JSON.stringify(updated));
+        
+        // Invalidate cache
+        ctx.waitUntil(Promise.all([
+          caches.default.delete("/api/list"),
+          caches.default.delete(new Request(new URL("/api/image/" + id, req.url).toString()))
+        ]));
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        console.error("Error deleting item:", error);
+        return new Response(JSON.stringify({ 
+          error: "Failed to delete item",
+          details: error.message 
+        }), { status: 500 });
+      }
+    }
+
+    return new Response("404 Not Found", { status: 404 });
   }
 }
-
-// Add Item
-if (path === "/api/tambah" && req.method === "POST") {
-  try {
-    const cookieHeader = req.headers.get("Cookie") || "";
-    const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
-    const token = cookies.get("admin");
-    const validToken = await env.KATALOG.get("admin_token");
-
-    if (token !== validToken) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
-
-    const body = await req.json();
-    const { nama, harga, satuan, base64 } = body;
-
-    if (!nama || typeof nama !== "string" || nama.trim().length === 0) {
-      return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { status: 400 });
-    }
-
-    if (!harga || isNaN(harga) || Number(harga) <= 0) {
-      return new Response(JSON.stringify({ error: "Harga harus angka positif" }), { status: 400 });
-    }
-
-    if (!satuan || typeof satuan !== "string" || satuan.trim().length === 0) {
-      return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { status: 400 });
-    }
-
-    if (!base64 || typeof base64 !== "string" || !/^data:image\//.test(base64)) {
-      return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { status: 400 });
-    }
-
-    let items = [];
-    try {
-      const existing = await env.KATALOG.get("items");
-      items = JSON.parse(existing || "[]");
-      if (!Array.isArray(items)) items = [];
-    } catch (e) {
-      console.warn("Failed to parse items from KV:", e.message);
-    }
-
-    const newItem = {
-      id: crypto.randomUUID(),
-      nama: nama.trim(),
-      harga: Number(harga),
-      satuan: satuan.trim(),
-      base64,
-      timestamp: Date.now()
-    };
-
-    items.push(newItem);
-    await env.KATALOG.put("items", JSON.stringify(items));
-    ctx.waitUntil(caches.default.delete("/api/list"));
-
-    return new Response(JSON.stringify({ success: true, id: newItem.id }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error adding item:", error);
-    return new Response(JSON.stringify({
-      error: "Failed to add item",
-      details: error.message
-    }), { status: 500 });
-  }
-}
-
-// Delete Item
-if (path === "/api/hapus" && req.method === "POST") {
-  try {
-    const cookieHeader = req.headers.get("Cookie") || "";
-    const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
-    const token = cookies.get("admin");
-    const validToken = await env.KATALOG.get("admin_token");
-
-    if (token !== validToken) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-    }
-
-    const { id } = await req.json();
-    if (!id) return new Response("Missing ID", { status: 400 });
-
-    const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-    const updated = items.filter(item => item.id !== id);
-    await env.KATALOG.put("items", JSON.stringify(updated));
-
-    ctx.waitUntil(Promise.all([
-      caches.default.delete("/api/list"),
-      caches.default.delete(new Request(new URL("/api/image/" + id, req.url).toString()))
-    ]));
-
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error deleting item:", error);
-    return new Response(JSON.stringify({
-      error: "Failed to delete item",
-      details: error.message
-    }), { status: 500 });
-  }
-}
-
-return new Response("404 Not Found", { status: 404 });
-
-} }
 
 const INDEX_HTML = `<!DOCTYPE html>
 <html lang="id">
@@ -384,19 +391,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       animation: fadeIn 0.3s ease forwards;
       opacity: 0;
     }
-    .retry-btn {
-      background-color: #3b82f6;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
-      font-size: 0.875rem;
-      margin-top: 0.5rem;
-      cursor: pointer;
-      border: none;
-    }
-    .retry-btn:hover {
-      background-color: #2563eb;
-    }
     .loading-indicator {
       text-align: center;
       padding: 1rem;
@@ -409,13 +403,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       background-color: #fee2e2;
       border-radius: 0.375rem;
       margin: 1rem 0;
-    }
-    .image-retry {
-      transition: all 0.3s ease;
-    }
-    .image-retry.hidden {
-      opacity: 0;
-      pointer-events: none;
     }
   </style>
 </head>
@@ -500,115 +487,235 @@ const INDEX_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-const SCRIPT_JS = "use strict"; class BarangApp { constructor() { this.isAdmin = false; this.currentPage = 1; this.itemsPerPage = 10; this.hasMoreItems = true; this.isLoading = false; this.maxRetries = 3; this.baseDelay = 1000; this.abortController = null; this.scrollDebounce = null; this.imageLoadTimeouts = new Map();
+const SCRIPT_JS = `"use strict";
+class BarangApp {
+  constructor() {
+    this.isAdmin = false;
+    this.currentPage = 1;
+    this.itemsPerPage = 10;
+    this.hasMoreItems = true;
+    this.isLoading = false;
+    this.maxRetries = 3;
+    this.retryCount = 0;
+    this.baseDelay = 1000;
+    this.abortController = null;
+    this.scrollDebounce = null;
+    this.imageLoadTimeouts = new Map();
+    
+    this.observer = new IntersectionObserver(
+      (entries) => this.handleScroll(entries),
+      { threshold: 0.85 } // Changed to 85% visibility for pagination
+    );
 
-this.observer = new IntersectionObserver(
-  (entries) => this.handleScroll(entries),
-  { threshold: 0.1 }
-);
-
-this.initElements();
-this.initEventListeners();
-this.checkAdminStatus();
-this.loadBarang();
-
-}
-
-initElements() { this.form = document.getElementById('formBarang'); this.katalog = document.getElementById('katalog'); this.adminControls = document.getElementById('adminControls'); this.loginModal = document.getElementById('loginModal'); this.loginForm = document.getElementById('loginForm'); this.logoutBtn = document.getElementById('logoutBtn'); this.showLoginBtn = document.getElementById('showLoginBtn'); this.cancelLoginBtn = document.getElementById('cancelLoginBtn'); this.fileInput = document.getElementById('gambar'); this.imagePreview = document.getElementById('imagePreview'); this.imagePreviewContainer = document.getElementById('imagePreviewContainer'); this.namaInput = document.getElementById('nama'); this.satuanInput = document.getElementById('satuan'); this.loadingIndicator = document.getElementById('loadingIndicator'); this.errorMessage = document.getElementById('errorMessage'); }
-
-initEventListeners() { this.form.addEventListener('submit', (e) => this.handleSubmit(e)); this.loginForm.addEventListener('submit', (e) => this.handleLogin(e)); this.logoutBtn.addEventListener('click', () => this.handleLogout()); this.showLoginBtn.addEventListener('click', () => this.showLoginModal()); this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin()); this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e)); this.namaInput.addEventListener('input', (e) => this.autoCapitalize(e)); this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e)); this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true)); this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true)); }
-
-async handleSubmit(e) { e.preventDefault(); const submitBtn = this.form.querySelector('button[type="submit"]');
-
-try {
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Memproses...';
-
-  const nama = this.form.nama.value.trim();
-  const harga = this.form.harga.value.trim();
-  const satuan = this.form.satuan.value.trim();
-  const gambar = this.form.gambar.files[0];
-
-  if (!nama || !harga || !satuan || !gambar) {
-    throw new Error('Semua field harus diisi');
+    this.initElements();
+    this.initEventListeners();
+    this.checkAdminStatus();
+    this.loadBarang();
   }
 
-  const base64 = await this.createSquareImage(gambar);
-
-  if (!/^data:image\//.test(base64)) {
-    throw new Error('Format base64 tidak valid');
+  initElements() {
+    this.form = document.getElementById('formBarang');
+    this.katalog = document.getElementById('katalog');
+    this.adminControls = document.getElementById('adminControls');
+    this.loginModal = document.getElementById('loginModal');
+    this.loginForm = document.getElementById('loginForm');
+    this.logoutBtn = document.getElementById('logoutBtn');
+    this.showLoginBtn = document.getElementById('showLoginBtn');
+    this.cancelLoginBtn = document.getElementById('cancelLoginBtn');
+    this.fileInput = document.getElementById('gambar');
+    this.imagePreview = document.getElementById('imagePreview');
+    this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
+    this.namaInput = document.getElementById('nama');
+    this.satuanInput = document.getElementById('satuan');
+    this.loadingIndicator = document.getElementById('loadingIndicator');
+    this.errorMessage = document.getElementById('errorMessage');
   }
 
-  const response = await this.fetchWithRetry('/api/tambah', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nama, harga: Number(harga), satuan, base64 })
-  });
-
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result.error || 'Gagal menambahkan barang');
+  initEventListeners() {
+    this.form.addEventListener('submit', (e) => this.handleSubmit(e));
+    this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+    this.logoutBtn.addEventListener('click', () => this.handleLogout());
+    this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
+    this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
+    this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+    this.namaInput.addEventListener('input', (e) => this.autoCapitalize(e));
+    this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
+    this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
+    this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
   }
 
-  this.showError('Barang berhasil ditambahkan!');
-  this.form.reset();
-  this.imagePreviewContainer.classList.add('hidden');
+  cleanup() {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.observer.disconnect();
+    if (this.scrollDebounce) {
+      clearTimeout(this.scrollDebounce);
+    }
+    this.imageLoadTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.imageLoadTimeouts.clear();
+  }
 
-  this.addNewItemToView({
-    ...result,
-    nama,
-    harga,
-    satuan,
-    base64,
-    timestamp: Date.now()
-  });
-} catch (error) {
-  console.error('Submit error:', error);
-  this.showError('Error: ' + error.message);
-} finally {
-  submitBtn.disabled = false;
-  submitBtn.textContent = 'Tambah Barang';
-}
+  autoCapitalize(event, force = false) {
+    const input = event.target;
+    const originalValue = input.value;
+    
+    if (originalValue.length === 0) return;
+    
+    const startPos = input.selectionStart;
+    const endPos = input.selectionEnd;
+    
+    let newValue = originalValue.replace(/\\b\\w/g, char => char.toUpperCase());
+    
+    if (force && newValue !== originalValue) {
+      newValue = newValue.replace(/\\s+/g, ' ').trim();
+    }
+    
+    if (newValue !== originalValue) {
+      input.value = newValue;
+      const lengthDiff = newValue.length - originalValue.length;
+      input.setSelectionRange(startPos + lengthDiff, endPos + lengthDiff);
+    }
+  }
 
-}
+  showLoginModal() {
+    this.loginModal.classList.remove('hidden');
+    document.getElementById('loginUsername').focus();
+  }
 
-createSquareImage(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = (event) => { const img = new Image(); img.src = event.target.result; img.onload = () => { const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+  cancelLogin() {
+    this.loginModal.classList.add('hidden');
+  }
 
-let width = img.width;
-      let height = img.height;
-      const maxSize = 800;
+  async checkAdminStatus() {
+    try {
+      const response = await this.fetchWithRetry('/api/check-admin');
+      const { isAdmin } = await response.json();
+      this.isAdmin = isAdmin;
+      this.toggleAdminUI();
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      this.isAdmin = false;
+      this.toggleAdminUI();
+    }
+  }
 
-      if (width > height && width > maxSize) {
-        height *= maxSize / width;
-        width = maxSize;
-      } else if (height > maxSize) {
-        width *= maxSize / height;
-        height = maxSize;
+  toggleAdminUI() {
+    if (this.isAdmin) {
+      this.adminControls.classList.remove('hidden');
+      this.showLoginBtn.classList.add('hidden');
+    } else {
+      this.adminControls.classList.add('hidden');
+      this.loginModal.classList.add('hidden');
+      this.showLoginBtn.classList.remove('hidden');
+    }
+  }
+
+  async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    
+    this.abortController = new AbortController();
+    
+    try {
+      const timeoutId = setTimeout(() => this.abortController.abort(), 10000);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: this.abortController.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);
+      
+      return response;
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+      if (retries <= 0) throw error;
+      
+      const delay = Math.min(this.baseDelay * Math.pow(2, this.maxRetries - retries), 30000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return this.fetchWithRetry(url, options, retries - 1);
+    }
+  }
+
+  async handleLogin(e) {
+    e.preventDefault();
+    const username = document.getElementById('loginUsername').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    try {
+      const response = await this.fetchWithRetry('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      
+      if (response.ok) {
+        this.isAdmin = true;
+        this.toggleAdminUI();
+        this.loginModal.classList.add('hidden');
+        this.resetAndLoad();
+      } else {
+        this.showError('Login gagal! Periksa username dan password');
       }
+    } catch (error) {
+      console.error('Login error:', error);
+      this.showError('Terjadi kesalahan saat login. Silakan coba lagi.');
+    }
+  }
 
-      canvas.width = width;
-      canvas.height = height;
-      ctx.drawImage(img, 0, 0, width, height);
+  async handleLogout() {
+    try {
+      await this.fetchWithRetry('/api/logout');
+      this.isAdmin = false;
+      this.toggleAdminUI();
+      this.resetAndLoad();
+    } catch (error) {
+      console.error('Logout error:', error);
+      this.showError('Terjadi kesalahan saat logout. Silakan coba lagi.');
+    }
+  }
 
-      try {
-        const base64 = canvas.toDataURL('image/webp', 0.85);
-        resolve(base64);
-      } catch (e) {
-        try {
-          const fallback = canvas.toDataURL('image/jpeg', 0.85);
-          resolve(fallback);
-        } catch (err) {
-          reject(new Error('Gagal mengonversi gambar ke base64'));
-        }
-      }
+  resetAndLoad() {
+    this.currentPage = 1;
+    this.hasMoreItems = true;
+    this.katalog.innerHTML = '';
+    this.loadBarang();
+  }
+
+  handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
+    if (!validTypes.includes(file.type)) {
+      this.showError('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
+      this.fileInput.value = '';
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) { // 2MB max
+      this.showError('Ukuran gambar terlalu besar. Maksimal 2MB.');
+      this.fileInput.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      this.imagePreview.src = event.target.result;
+      this.imagePreviewContainer.classList.remove('hidden');
     };
-    img.onerror = () => reject(new Error('Gagal memuat gambar'));
-  };
-  reader.onerror = () => reject(new Error('Gagal membaca file'));
-  reader.readAsDataURL(file);
-});
-
-}
+    
+    reader.onerror = () => {
+      this.showError('Gagal membaca file. Coba lagi.');
+      this.fileInput.value = '';
+    };
+    
+    reader.readAsDataURL(file);
+  }
 
   showError(message) {
     this.errorMessage.textContent = message;
@@ -743,16 +850,17 @@ let width = img.width;
 
     try {
       if (this.currentPage === 1) {
-        this.katalog.innerHTML = Array.from({ length: 6 }, () => `
-  <div class="bg-white p-3 rounded shadow skeleton-item">
-    <div class="skeleton-image"></div>
-    <div class="skeleton-text medium"></div>
-    <div class="skeleton-text short"></div>
-  </div>
-`).join('');
+        this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
+          <div class="bg-white p-3 rounded shadow skeleton-item">
+            <div class="skeleton-image"></div>
+            <div class="skeleton-text medium"></div>
+            <div class="skeleton-text short"></div>
+          </div>
+        \`).join('');
+      }
 
       const response = await this.fetchWithRetry(
-        `/api/list?\${new URLSearchParams({ 
+        \`/api/list?\${new URLSearchParams({ 
           page: this.currentPage, 
           limit: this.itemsPerPage,
           _: Date.now() 
@@ -850,9 +958,6 @@ let width = img.width;
           onload="this.classList.remove('loading'); this.classList.add('loaded'); window.app.clearImageTimeout(this)"
           onerror="window.app.handleImageError(this)"
         >
-        <div class="image-retry hidden absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <button class="retry-btn" onclick="window.app.retryLoadImage(this)">Muat Ulang</button>
-        </div>
       </div>
       <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
       <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
@@ -871,9 +976,14 @@ let width = img.width;
   setImageTimeout(img) {
     const timeoutId = setTimeout(() => {
       if (img && img.classList.contains('loading')) {
-        img.dispatchEvent(new Event('error'));
+        // Automatically retry loading the image
+        const newSrc = img.src.includes('?') ? 
+          \`\${img.src.split('?')[0]}?t=\${Date.now()}\` : 
+          \`\${img.src}?t=\${Date.now()}\`;
+        img.src = newSrc;
+        this.setImageTimeout(img);
       }
-    }, 8000); // Timeout 8 detik
+    }, 5000); // Timeout 5 detik
     
     this.imageLoadTimeouts.set(img, timeoutId);
   }
@@ -887,34 +997,12 @@ let width = img.width;
 
   handleImageError(imgElement) {
     this.clearImageTimeout(imgElement);
-    const container = imgElement.parentElement;
-    const retryOverlay = container.querySelector('.image-retry');
-    if (retryOverlay) {
-      retryOverlay.classList.remove('hidden');
-      
-      // Coba muat ulang otomatis setelah 3 detik
-      setTimeout(() => {
-        if (retryOverlay && !retryOverlay.classList.contains('hidden')) {
-          this.retryLoadImage(retryOverlay.querySelector('.retry-btn'));
-        }
-      }, 3000);
-    }
-  }
-
-  retryLoadImage(button) {
-    const overlay = button.parentElement;
-    overlay.classList.add('hidden');
-    const img = overlay.previousElementSibling;
-    
-    if (!img) return;
-    
-    // Tambahkan timestamp baru untuk bypass cache
-    const newSrc = img.src.includes('?') ? 
-      \`\${img.src.split('?')[0]}?t=\${Date.now()}\` : 
-      \`\${img.src}?t=\${Date.now()}\`;
-    
-    img.src = newSrc;
-    this.setImageTimeout(img);
+    // Automatically retry loading the image
+    const newSrc = imgElement.src.includes('?') ? 
+      \`\${imgElement.src.split('?')[0]}?t=\${Date.now()}\` : 
+      \`\${imgElement.src}?t=\${Date.now()}\`;
+    imgElement.src = newSrc;
+    this.setImageTimeout(imgElement);
   }
 
   async hapusBarang(id) {
@@ -964,3 +1052,4 @@ window.addEventListener('beforeunload', () => {
     window.app.cleanup();
   }
 });
+`;
