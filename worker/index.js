@@ -134,11 +134,11 @@ export default {
       });
     }
 
-    // GET list barang dengan pagination dan cache
+    // GET list barang dengan pagination dan cache - FIXED
     if (path === "/api/list") {
       try {
         const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10));
+        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
         
         // Check cache
         const cacheKey = new Request(url.toString());
@@ -149,11 +149,26 @@ export default {
           setTimeout(() => reject(new Error("KV timeout")), 3000)
         );
         
-        const itemsPromise = env.KATALOG.get("items", { type: "json", cacheTtl: 60 });
-        const data = await Promise.race([itemsPromise, timeoutPromise]);
+        // FIX: Handle case where items don't exist in KV yet
+        const itemsData = await env.KATALOG.get("items");
+        let items = [];
         
-        let items = Array.isArray(data) ? data : [];
-        items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        if (itemsData) {
+          try {
+            items = JSON.parse(itemsData);
+          } catch (e) {
+            console.error("Failed to parse items:", e);
+            items = [];
+          }
+        }
+        
+        // Ensure items is an array
+        if (!Array.isArray(items)) {
+          items = [];
+        }
+        
+        // Sort by timestamp (newest first)
+        items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         
         const startIndex = (page - 1) * limit;
         const endIndex = Math.min(startIndex + limit, items.length);
@@ -186,109 +201,109 @@ export default {
       }
     }
 
-   // POST tambah barang - perbaikan lebih robust
-if (path === "/api/tambah" && req.method === "POST") {
-  try {
-    // 1. Cek Authorization
-    const cookieHeader = req.headers.get("Cookie") || "";
-    const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
-    const token = cookies.get("admin");
-    const validToken = await env.KATALOG.get("admin_token");
-    
-    if (token !== validToken) {
-      return new Response(JSON.stringify({ 
-        error: "Unauthorized",
-        message: "Token admin tidak valid"
-      }), { 
-        status: 401,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    // 2. Parse Request Body
-    let body;
-    try {
-      body = await req.json();
-      if (!body) throw new Error("Empty request body");
-    } catch (e) {
-      return new Response(JSON.stringify({ 
-        error: "Invalid request",
-        message: "Data format tidak valid"
-      }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    // 3. Validasi Data
-    const errors = [];
-    if (!body.nama?.trim()) errors.push("Nama barang harus diisi");
-    if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) errors.push("Harga harus angka positif");
-    if (!body.satuan?.trim()) errors.push("Satuan harus diisi");
-    if (!body.base64 || !body.base64.startsWith("data:image/")) errors.push("Gambar tidak valid");
-
-    if (errors.length > 0) {
-      return new Response(JSON.stringify({ 
-        error: "Validation error",
-        messages: errors
-      }), { 
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    // 4. Proses Data
-    const newItem = {
-      id: crypto.randomUUID(),
-      nama: body.nama.trim(),
-      harga: Number(body.harga),
-      satuan: body.satuan.trim(),
-      base64: body.base64,
-      timestamp: Date.now()
-    };
-
-    // 5. Simpan ke KV Storage dengan retry
-    let retries = 3;
-    while (retries > 0) {
+    // POST tambah barang
+    if (path === "/api/tambah" && req.method === "POST") {
       try {
-        const existingItems = await env.KATALOG.get("items", "json") || [];
-        const updatedItems = [...existingItems, newItem];
+        // 1. Cek Authorization
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
         
-        await env.KATALOG.put("items", JSON.stringify(updatedItems));
-        
-        // Invalidate cache
-        ctx.waitUntil(caches.default.delete("/api/list"));
-        
-        return new Response(JSON.stringify({ 
-          success: true,
-          id: newItem.id
-        }), {
-          headers: { 
-            "Content-Type": "application/json",
-            "Cache-Control": "no-store"
-          }
-        });
-      } catch (kvError) {
-        retries--;
-        if (retries === 0) {
-          console.error("KV Storage error:", kvError);
-          throw new Error("Gagal menyimpan data setelah 3 percobaan");
+        if (token !== validToken) {
+          return new Response(JSON.stringify({ 
+            error: "Unauthorized",
+            message: "Token admin tidak valid"
+          }), { 
+            status: 401,
+            headers: { "Content-Type": "application/json" }
+          });
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // 2. Parse Request Body
+        let body;
+        try {
+          body = await req.json();
+          if (!body) throw new Error("Empty request body");
+        } catch (e) {
+          return new Response(JSON.stringify({ 
+            error: "Invalid request",
+            message: "Data format tidak valid"
+          }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // 3. Validasi Data
+        const errors = [];
+        if (!body.nama?.trim()) errors.push("Nama barang harus diisi");
+        if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) errors.push("Harga harus angka positif");
+        if (!body.satuan?.trim()) errors.push("Satuan harus diisi");
+        if (!body.base64 || !body.base64.startsWith("data:image/")) errors.push("Gambar tidak valid");
+
+        if (errors.length > 0) {
+          return new Response(JSON.stringify({ 
+            error: "Validation error",
+            messages: errors
+          }), { 
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // 4. Proses Data
+        const newItem = {
+          id: crypto.randomUUID(),
+          nama: body.nama.trim(),
+          harga: Number(body.harga),
+          satuan: body.satuan.trim(),
+          base64: body.base64,
+          timestamp: Date.now()
+        };
+
+        // 5. Simpan ke KV Storage dengan retry
+        let retries = 3;
+        while (retries > 0) {
+          try {
+            const existingItems = await env.KATALOG.get("items", "json") || [];
+            const updatedItems = [...existingItems, newItem];
+            
+            await env.KATALOG.put("items", JSON.stringify(updatedItems));
+            
+            // Invalidate cache
+            ctx.waitUntil(caches.default.delete("/api/list"));
+            
+            return new Response(JSON.stringify({ 
+              success: true,
+              id: newItem.id
+            }), {
+              headers: { 
+                "Content-Type": "application/json",
+                "Cache-Control": "no-store"
+              }
+            });
+          } catch (kvError) {
+            retries--;
+            if (retries === 0) {
+              console.error("KV Storage error:", kvError);
+              throw new Error("Gagal menyimpan data setelah 3 percobaan");
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      } catch (error) {
+        console.error("Server error:", error);
+        return new Response(JSON.stringify({
+          error: "Internal Server Error",
+          message: error.message,
+          stack: env.ENVIRONMENT === "development" ? error.stack : undefined
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
       }
     }
-  } catch (error) {
-    console.error("Server error:", error);
-    return new Response(JSON.stringify({
-      error: "Internal Server Error",
-      message: error.message,
-      stack: env.ENVIRONMENT === "development" ? error.stack : undefined
-    }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
 
     // POST hapus barang
     if (path === "/api/hapus" && req.method === "POST") {
@@ -305,7 +320,7 @@ if (path === "/api/tambah" && req.method === "POST") {
         const { id } = await req.json();
         if (!id) return new Response("Missing ID", { status: 400 });
 
-        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+        const items = await env.KATALOG.get("items", "json") || [];
         const updated = items.filter(item => item.id !== id);
         await env.KATALOG.put("items", JSON.stringify(updated));
         
@@ -330,6 +345,8 @@ if (path === "/api/tambah" && req.method === "POST") {
     return new Response("404 Not Found", { status: 404 });
   }
 }
+
+// ... (rest of the code remains the same)
 
 const INDEX_HTML = `<!DOCTYPE html>
 <html lang="id">
