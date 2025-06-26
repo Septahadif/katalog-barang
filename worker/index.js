@@ -1,7 +1,7 @@
 // Fungsi utilitas
 async function getAllItems(env) {
   const items1 = JSON.parse(await env.KATALOG.get("items") || "[]");
-  const items2 = JSON.parse(await env.KATALOG2.get("items") || "[]");
+  const items2 = JSON.parse(await env.KATALOG_2.get("items") || "[]");
   return [...items1, ...items2];
 }
 
@@ -12,10 +12,10 @@ async function saveItem(env, item) {
     await env.KATALOG.put("items", JSON.stringify(items));
     return "KATALOG";
   } catch (err) {
-    const items2 = JSON.parse(await env.KATALOG2.get("items") || "[]");
+    const items2 = JSON.parse(await env.KATALOG_2.get("items") || "[]");
     items2.push(item);
-    await env.KATALOG2.put("items", JSON.stringify(items2));
-    return "KATALOG2";
+    await env.KATALOG_2.put("items", JSON.stringify(items2));
+    return "KATALOG_2";
   }
 }
 
@@ -29,10 +29,10 @@ async function deleteItemById(env, id) {
     found = true;
   }
 
-  const from2 = JSON.parse(await env.KATALOG2.get("items") || "[]");
+  const from2 = JSON.parse(await env.KATALOG_2.get("items") || "[]");
   const filtered2 = from2.filter(item => item.id !== id);
   if (filtered2.length !== from2.length) {
-    await env.KATALOG2.put("items", JSON.stringify(filtered2));
+    await env.KATALOG_2.put("items", JSON.stringify(filtered2));
     found = true;
   }
 
