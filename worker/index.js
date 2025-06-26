@@ -75,7 +75,7 @@ export default {
       } catch (error) {
         return new Response(JSON.stringify({ isAdmin: false }), {
           headers: { "Content-Type": "application/json" }
-        };
+        })
       }
     }
 
