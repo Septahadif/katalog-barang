@@ -89,57 +89,57 @@ export default {
     }
 
     // GET list barang dengan pagination
-    if (path === "/api/list") {
-      try {
-        // Timeout untuk KV get
-        const data = await Promise.race([
-          env.KATALOG.get("items"),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("KV timeout")), 3000)
-        ));
-        
-        let items = [];
-        try {
-          items = JSON.parse(data || "[]");
-        } catch (e) {
-          console.error("Error parsing items:", e);
-          items = [];
-        }
-        
-        // Urutkan dari terlama ke terbaru
-        items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-        
-        // Pagination dengan batasan
-        const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + limit;
-        
-        return new Response(JSON.stringify({
-          items: items.slice(startIndex, endIndex),
-          total: items.length,
-          page,
-          limit,
-          hasMore: endIndex < items.length
-        }), {
-          headers: { 
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache"
-          }
-        });
-        
-      } catch (error) {
-        console.error("Error fetching items:", error);
-        return new Response(JSON.stringify({
-          error: "Service Unavailable",
-          message: "Silakan coba lagi dalam beberapa saat",
-          retryAfter: 5
-        }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
+if (path === "/api/list") {
+  try {
+    // Timeout untuk KV get - perbaikan sintaks
+    const data = await Promise.race([
+      env.KATALOG.get("items"),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("KV timeout")), 3000)
+    ]); // <-- Ini penutup yang benar untuk Promise.race
+    
+    let items = [];
+    try {
+      items = JSON.parse(data || "[]");
+    } catch (e) {
+      console.error("Error parsing items:", e);
+      items = [];
     }
+    
+    // Urutkan dari terlama ke terbaru
+    items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    
+    // Pagination dengan batasan
+    const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    
+    return new Response(JSON.stringify({
+      items: items.slice(startIndex, endIndex),
+      total: items.length,
+      page,
+      limit,
+      hasMore: endIndex < items.length
+    }), {
+      headers: { 
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache"
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error fetching items:", error);
+    return new Response(JSON.stringify({
+      error: "Service Unavailable",
+      message: "Silakan coba lagi dalam beberapa saat",
+      retryAfter: 5
+    }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+}
 
     // POST tambah barang
     if (path === "/api/tambah" && req.method === "POST") {
