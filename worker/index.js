@@ -866,9 +866,8 @@ async handleSubmit(e) {
     // Handle Response
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `Request failed with status ${response.status}`);
-    }
-
+      throw new Error(errorData.message || "Request failed with status " + response.status);
+}
     const result = await response.json();
 
     // Reset Form & Update UI
@@ -883,7 +882,7 @@ async handleSubmit(e) {
       timestamp: Date.now()
     });
 
-    this.showMessage('Barang berhasil ditambahkan!', 'success');
+    this.showMessage("Barang berhasil ditambahkan!", "success");
 
   } catch (error) {
     console.error('Submit error:', error);
