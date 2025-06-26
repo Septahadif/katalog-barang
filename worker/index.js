@@ -964,4 +964,3 @@ window.addEventListener('beforeunload', () => {
     window.app.cleanup();
   }
 });
-`;
