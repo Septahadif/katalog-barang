@@ -379,7 +379,8 @@ class BarangApp {
     this.totalPages = 1;
     this.isLoading = false;
     this.hasMoreItems = true;
-    this.failedImages = new Map(); // Track failed image loads
+    this.imageRefreshInterval = 30000; // 30 seconds
+    this.refreshIntervals = {}; // Store intervals for each image
     
     this.initElements();
     this.initEventListeners();
@@ -708,7 +709,7 @@ class BarangApp {
           class="loading" 
           loading="lazy"
           onload="this.classList.remove('loading'); this.classList.add('loaded')"
-          onerror="app.handleImageError(this, '\${escapedId}')"
+          data-id="\${escapedId}"
         >
       </div>
       <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
@@ -719,30 +720,27 @@ class BarangApp {
     \`;
     
     this.katalog.appendChild(itemElement);
+    
+    // Setup auto-refresh for this image
+    this.setupImageAutoRefresh(escapedId);
   }
 
-  handleImageError(imgElement, imageId) {
-    // Track failed attempts for this image
-    const attempts = this.failedImages.get(imageId) || 0;
-    
-    if (attempts < 5) { // Try up to 5 times
-      this.failedImages.set(imageId, attempts + 1);
-      
-      // Retry with exponential backoff
-      const delay = Math.pow(2, attempts) * 1000; // 1s, 2s, 4s, 8s, 16s
-      
-      setTimeout(() => {
-        // Add a cache busting parameter
-        const newSrc = \`/api/image/\${imageId}?t=\${Date.now()}\`;
-        imgElement.src = newSrc;
-      }, delay);
-    } else {
-      // After 5 attempts, give up and show a placeholder
-      imgElement.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" fill="%23e5e7eb"><rect width="100" height="100"/></svg>';
-      imgElement.classList.remove('loading');
-      imgElement.classList.add('loaded');
-      this.failedImages.delete(imageId);
+  setupImageAutoRefresh(itemId) {
+    // Clear any existing interval for this item
+    if (this.refreshIntervals[itemId]) {
+      clearInterval(this.refreshIntervals[itemId]);
     }
+    
+    // Set up new interval
+    this.refreshIntervals[itemId] = setInterval(() => {
+      const imgElement = document.querySelector(\`img[data-id="\${itemId}"]\`);
+      if (imgElement) {
+        // Add a timestamp to force refresh
+        imgElement.src = \`/api/image/\${itemId}?t=\${Date.now()}\`;
+        imgElement.classList.add('loading');
+        imgElement.classList.remove('loaded');
+      }
+    }, this.imageRefreshInterval);
   }
 
   handleScroll() {
@@ -760,6 +758,12 @@ class BarangApp {
     try {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
+
+      // Clear the refresh interval for this item
+      if (this.refreshIntervals[id]) {
+        clearInterval(this.refreshIntervals[id]);
+        delete this.refreshIntervals[id];
+      }
 
       const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
       if (!response.ok) throw new Error('Gagal menghapus barang');
