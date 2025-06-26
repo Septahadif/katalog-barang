@@ -386,8 +386,7 @@ export default {
   }
 }
     return new Response("404 Not Found", { status: 404 });
-  }
-}
+
 
 const INDEX_HTML = `<!DOCTYPE html>
 <html lang="id">
