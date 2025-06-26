@@ -2,258 +2,65 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = url.pathname;
+    const ip = req.headers.get('cf-connecting-ip') || 'unknown';
+    const userAgent = req.headers.get('user-agent') || 'unknown';
 
     // Log all incoming requests
     await this.logToKv(env, {
       type: 'request',
       method: req.method,
       path: path,
-      ip: req.headers.get('cf-connecting-ip'),
-      userAgent: req.headers.get('user-agent'),
+      ip: ip,
+      userAgent: userAgent,
       timestamp: Date.now()
     });
 
     try {
-      // Serve HTML
+      // Serve static files
       if (path === "/" || path === "/index.html") {
         return new Response(INDEX_HTML, {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
+          headers: { 
+            "Content-Type": "text/html; charset=utf-8",
+            "X-Content-Type-Options": "nosniff"
+          }
         });
       }
 
-      // Serve JS
       if (path === "/script.js") {
         return new Response(SCRIPT_JS, {
-          headers: { "Content-Type": "application/javascript; charset=utf-8" },
-        });
-      }
-
-      // Serve Image
-      if (path.startsWith("/api/image/")) {
-        const id = path.split('/')[3];
-        if (!id) {
-          await this.logToKv(env, {
-            type: 'error',
-            message: 'Missing image ID',
-            path: path,
-            timestamp: Date.now()
-          });
-          return new Response("Missing ID", { status: 400 });
-        }
-
-        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-        const item = items.find(item => item.id === id);
-        
-        if (!item || !item.base64) {
-          await this.logToKv(env, {
-            type: 'error',
-            message: 'Image not found',
-            id: id,
-            timestamp: Date.now()
-          });
-          return new Response("Image not found", { status: 404 });
-        }
-
-        // Extract image data from base64
-        const base64Data = item.base64.split(',')[1] || item.base64;
-        const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-        
-        return new Response(imageBuffer, {
           headers: { 
-            "Content-Type": "image/jpeg",
-            "Cache-Control": "public, max-age=31536000" // Cache for 1 year
+            "Content-Type": "application/javascript; charset=utf-8",
+            "X-Content-Type-Options": "nosniff"
           }
         });
       }
 
-      // Login Admin
-      if (path === "/api/login" && req.method === "POST") {
-        const { username, password } = await req.json();
-        const isAdmin = username === "septa" && password === "septa2n2n";
-        
-        if (isAdmin) {
-          await this.logToKv(env, {
-            type: 'auth',
-            action: 'login_success',
-            username: username,
-            timestamp: Date.now()
-          });
-          
-          return new Response(JSON.stringify({ success: true }), {
-            headers: { 
-              "Content-Type": "application/json",
-              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
-            }
-          });
-        }
-        
-        await this.logToKv(env, {
-          type: 'auth',
-          action: 'login_failed',
-          username: username,
-          timestamp: Date.now()
-        });
-        
-        return new Response(JSON.stringify({ success: false }), { status: 401 });
-      }
-
-      // Check Admin Status
-      if (path === "/api/check-admin") {
-        const cookie = req.headers.get("Cookie") || "";
-        const isAdmin = cookie.includes("admin=true");
-        
-        await this.logToKv(env, {
-          type: 'auth',
-          action: 'check_admin',
-          isAdmin: isAdmin,
-          timestamp: Date.now()
-        });
-        
-        return new Response(JSON.stringify({ isAdmin }), {
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
-      // Logout
-      if (path === "/api/logout") {
-        await this.logToKv(env, {
-          type: 'auth',
-          action: 'logout',
-          timestamp: Date.now()
-        });
-        
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { 
-            "Content-Type": "application/json",
-            "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT"
-          }
-        });
-      }
-
-      // GET list barang
-      if (path === "/api/list") {
-        const data = await env.KATALOG.get("items");
-        
-        await this.logToKv(env, {
-          type: 'data',
-          action: 'list_items',
-          itemCount: data ? JSON.parse(data).length : 0,
-          timestamp: Date.now()
-        });
-        
-        return new Response(data || "[]", {
-          headers: { 
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache"
-          },
-        });
-      }
-
-      // POST tambah barang (hanya admin)
-      if (path === "/api/tambah" && req.method === "POST") {
-        const cookie = req.headers.get("Cookie") || "";
-        if (!cookie.includes("admin=true")) {
-          await this.logToKv(env, {
-            type: 'auth',
-            action: 'unauthorized_access',
-            endpoint: 'tambah_barang',
-            timestamp: Date.now()
-          });
-          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-        }
-
-        const body = await req.json();
-        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-
-        const item = { 
-          ...body, 
-          id: Date.now().toString(),
-          timestamp: Date.now()
-        };
-        items.push(item);
-
-        await env.KATALOG.put("items", JSON.stringify(items));
-        
-        await this.logToKv(env, {
-          type: 'data',
-          action: 'add_item',
-          itemId: item.id,
-          itemName: body.nama,
-          timestamp: Date.now()
-        });
-        
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      // POST hapus barang (hanya admin)
-      if (path === "/api/hapus" && req.method === "POST") {
-        const cookie = req.headers.get("Cookie") || "";
-        if (!cookie.includes("admin=true")) {
-          await this.logToKv(env, {
-            type: 'auth',
-            action: 'unauthorized_access',
-            endpoint: 'hapus_barang',
-            timestamp: Date.now()
-          });
-          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-        }
-
-        const id = url.searchParams.get("id");
-        if (!id) {
-          await this.logToKv(env, {
-            type: 'error',
-            message: 'Missing ID for deletion',
-            timestamp: Date.now()
-          });
-          return new Response("Missing ID", { status: 400 });
-        }
-
-        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-        const itemToDelete = items.find(item => item.id === id);
-        const updated = items.filter(item => item.id !== id);
-        await env.KATALOG.put("items", JSON.stringify(updated));
-
-        if (itemToDelete) {
-          await this.logToKv(env, {
-            type: 'data',
-            action: 'delete_item',
-            itemId: id,
-            itemName: itemToDelete.nama,
-            timestamp: Date.now()
-          });
-        }
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" },
-        });
+      // API endpoints
+      if (path.startsWith("/api/")) {
+        return await this.handleApiRequest(req, env, url, path, ip);
       }
 
       // Not found handler
-      await this.logToKv(env, {
-        type: 'error',
-        message: '404 Not Found',
-        path: path,
-        method: req.method,
-        timestamp: Date.now()
+      return new Response("404 Not Found", { 
+        status: 404,
+        headers: { "Content-Type": "text/plain" }
       });
-      
-      return new Response("404 Not Found", { status: 404 });
+
     } catch (error) {
-      // Error handler with logging
+      // Global error handler
       await this.logToKv(env, {
         type: 'error',
         message: error.message,
         stack: error.stack,
         path: path,
         method: req.method,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        severity: 'critical'
       });
       
       return new Response(JSON.stringify({ 
         error: "Internal Server Error",
-        message: error.message 
+        message: "An unexpected error occurred" 
       }), { 
         status: 500,
         headers: { "Content-Type": "application/json" }
@@ -261,36 +68,323 @@ export default {
     }
   },
 
+  async handleApiRequest(req, env, url, path, ip) {
+    // Image handling
+    if (path.startsWith("/api/image/")) {
+      return await this.handleImageRequest(req, env, path);
+    }
+
+    // Authentication endpoints
+    if (path === "/api/login" && req.method === "POST") {
+      return await this.handleLogin(req, env, ip);
+    }
+
+    if (path === "/api/check-admin") {
+      return await this.handleCheckAdmin(req, env);
+    }
+
+    if (path === "/api/logout") {
+      return await this.handleLogout(env, ip);
+    }
+
+    // Data endpoints
+    if (path === "/api/list") {
+      return await this.handleListItems(env);
+    }
+
+    if (path === "/api/tambah" && req.method === "POST") {
+      return await this.handleAddItem(req, env, ip);
+    }
+
+    if (path === "/api/hapus" && req.method === "POST") {
+      return await this.handleDeleteItem(req, env, url, ip);
+    }
+
+    // Admin-only log access
+    if (path === "/api/logs" && req.method === "GET") {
+      return await this.handleGetLogs(req, env);
+    }
+
+    // Unknown API endpoint
+    await this.logToKv(env, {
+      type: 'error',
+      message: 'API endpoint not found',
+      path: path,
+      method: req.method,
+      timestamp: Date.now()
+    });
+    
+    return new Response("404 API Endpoint Not Found", { status: 404 });
+  },
+
+  async handleImageRequest(req, env, path) {
+    const id = path.split('/')[3];
+    if (!id) {
+      await this.logToKv(env, {
+        type: 'error',
+        message: 'Missing image ID',
+        path: path,
+        timestamp: Date.now()
+      });
+      return new Response("Missing ID", { status: 400 });
+    }
+
+    const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+    const item = items.find(item => item.id === id);
+    
+    if (!item || !item.base64) {
+      await this.logToKv(env, {
+        type: 'error',
+        message: 'Image not found',
+        id: id,
+        timestamp: Date.now()
+      });
+      return new Response("Image not found", { status: 404 });
+    }
+
+    const base64Data = item.base64.split(',')[1] || item.base64;
+    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    
+    return new Response(imageBuffer, {
+      headers: { 
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    });
+  },
+
+  async handleLogin(req, env, ip) {
+    const { username, password } = await req.json();
+    const isAdmin = username === "septa" && password === "septa2n2n";
+    
+    if (isAdmin) {
+      await this.logToKv(env, {
+        type: 'auth',
+        action: 'login_success',
+        username: username,
+        ip: ip,
+        timestamp: Date.now()
+      });
+      
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { 
+          "Content-Type": "application/json",
+          "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict; Path=/"
+        }
+      });
+    }
+    
+    await this.logToKv(env, {
+      type: 'auth',
+      action: 'login_failed',
+      username: username,
+      ip: ip,
+      timestamp: Date.now(),
+      severity: 'warning'
+    });
+    
+    return new Response(JSON.stringify({ success: false }), { 
+      status: 401,
+      headers: { "Content-Type": "application/json" }
+    });
+  },
+
+  async handleCheckAdmin(req, env) {
+    const cookie = req.headers.get("Cookie") || "";
+    const isAdmin = cookie.includes("admin=true");
+    
+    await this.logToKv(env, {
+      type: 'auth',
+      action: 'check_admin',
+      isAdmin: isAdmin,
+      timestamp: Date.now()
+    });
+    
+    return new Response(JSON.stringify({ isAdmin }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  },
+
+  async handleLogout(env, ip) {
+    await this.logToKv(env, {
+      type: 'auth',
+      action: 'logout',
+      ip: ip,
+      timestamp: Date.now()
+    });
+    
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { 
+        "Content-Type": "application/json",
+        "Set-Cookie": "admin=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/"
+      }
+    };
+  },
+
+  async handleListItems(env) {
+    const data = await env.KATALOG.get("items");
+    const items = data ? JSON.parse(data) : [];
+    
+    await this.logToKv(env, {
+      type: 'data',
+      action: 'list_items',
+      itemCount: items.length,
+      timestamp: Date.now()
+    });
+    
+    return new Response(JSON.stringify(items), {
+      headers: { 
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache"
+      }
+    });
+  },
+
+  async handleAddItem(req, env, ip) {
+    const cookie = req.headers.get("Cookie") || "";
+    if (!cookie.includes("admin=true")) {
+      await this.logToKv(env, {
+        type: 'auth',
+        action: 'unauthorized_access',
+        endpoint: 'tambah_barang',
+        ip: ip,
+        timestamp: Date.now(),
+        severity: 'warning'
+      });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const body = await req.json();
+    if (!body.nama || !body.harga || !body.satuan || !body.base64) {
+      await this.logToKv(env, {
+        type: 'error',
+        message: 'Invalid item data',
+        data: body,
+        timestamp: Date.now()
+      });
+      return new Response(JSON.stringify({ error: "Invalid data" }), { 
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+    const item = { 
+      ...body, 
+      id: Date.now().toString(),
+      timestamp: Date.now()
+    };
+    items.push(item);
+
+    await env.KATALOG.put("items", JSON.stringify(items));
+    
+    await this.logToKv(env, {
+      type: 'data',
+      action: 'add_item',
+      itemId: item.id,
+      itemName: body.nama,
+      timestamp: Date.now()
+    });
+    
+    return new Response(JSON.stringify({ success: true, id: item.id }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  },
+
+  async handleDeleteItem(req, env, url, ip) {
+    const cookie = req.headers.get("Cookie") || "";
+    if (!cookie.includes("admin=true")) {
+      await this.logToKv(env, {
+        type: 'auth',
+        action: 'unauthorized_access',
+        endpoint: 'hapus_barang',
+        ip: ip,
+        timestamp: Date.now(),
+        severity: 'warning'
+      });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const id = url.searchParams.get("id");
+    if (!id) {
+      await this.logToKv(env, {
+        type: 'error',
+        message: 'Missing ID for deletion',
+        timestamp: Date.now()
+      });
+      return new Response(JSON.stringify({ error: "Missing ID" }), { 
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+    const itemToDelete = items.find(item => item.id === id);
+    const updated = items.filter(item => item.id !== id);
+    await env.KATALOG.put("items", JSON.stringify(updated));
+
+    if (itemToDelete) {
+      await this.logToKv(env, {
+        type: 'data',
+        action: 'delete_item',
+        itemId: id,
+        itemName: itemToDelete.nama,
+        timestamp: Date.now()
+      });
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { "Content-Type": "application/json" }
+    });
+  },
+
+  async handleGetLogs(req, env) {
+    const cookie = req.headers.get("Cookie") || "";
+    if (!cookie.includes("admin=true")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { 
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const logs = await this.getLogs(env);
+    return new Response(JSON.stringify(logs), {
+      headers: { "Content-Type": "application/json" }
+    });
+  },
+
   async logToKv(env, logData) {
     try {
-      // Get current logs
       const logs = JSON.parse(await env.KATALOG.get("logs") || "[]");
+      logs.push({
+        ...logData,
+        logId: crypto.randomUUID()
+      });
       
-      // Add new log entry
-      logs.push(logData);
-      
-      // Keep only the last 1000 logs to prevent excessive storage usage
+      // Keep only the last 1000 logs
       const trimmedLogs = logs.slice(-1000);
-      
-      // Save back to KV
       await env.KATALOG.put("logs", JSON.stringify(trimmedLogs));
     } catch (error) {
       console.error('Failed to write logs:', error);
     }
+  },
+
+  async getLogs(env) {
+    try {
+      const logs = await env.KATALOG.get("logs");
+      return logs ? JSON.parse(logs) : [];
+    } catch (error) {
+      console.error('Failed to read logs:', error);
+      return [];
+    }
   }
 }
-
-// Helper function to fetch logs (add this to your existing code)
-async function getLogs(env) {
-  try {
-    const logs = await env.KATALOG.get("logs");
-    return logs ? JSON.parse(logs) : [];
-  } catch (error) {
-    console.error('Failed to read logs:', error);
-    return [];
-  }
-}
-
     return new Response("404 Not Found", { status: 404 });
   }
 }
