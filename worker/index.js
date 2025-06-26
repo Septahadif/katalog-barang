@@ -30,7 +30,18 @@ export default {
           return new Response("Image not found", { status: 404 });
         }
 
-        const base64Data = item.base64.split(',')[1] || item.base64;
+        // Validasi base64
+        const base64Regex = /^data:image\/([a-zA-Z]*);base64,([^\"]*)$/;
+        let base64Data = item.base64;
+        
+        if (base64Regex.test(item.base64)) {
+          base64Data = item.base64.split(',')[1];
+        }
+
+        if (!base64Data || base64Data.length % 4 !== 0) {
+          return new Response("Invalid image data", { status: 400 });
+        }
+
         const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
         
         return new Response(imageBuffer, {
@@ -48,13 +59,18 @@ export default {
     if (path === "/api/login" && req.method === "POST") {
       try {
         const { username, password } = await req.json();
-        const isAdmin = username === "septa" && password === "septa2n2n";
+        const ADMIN_USERNAME = env.ADMIN_USERNAME || "septa";
+        const ADMIN_PASSWORD = env.ADMIN_PASSWORD || "septa2n2n";
+        const isAdmin = username === ADMIN_USERNAME && password === ADMIN_PASSWORD;
         
         if (isAdmin) {
+          const token = crypto.randomUUID();
+          await env.KATALOG.put("admin_token", token);
+          
           return new Response(JSON.stringify({ success: true }), {
             headers: { 
               "Content-Type": "application/json",
-              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
+              "Set-Cookie": `admin=${token}; HttpOnly; Secure; SameSite=Strict; Path=/`
             }
           });
         }
@@ -67,8 +83,12 @@ export default {
     // Check Admin Status
     if (path === "/api/check-admin") {
       try {
-        const cookie = req.headers.get("Cookie") || "";
-        return new Response(JSON.stringify({ isAdmin: cookie.includes("admin=true") }), {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        return new Response(JSON.stringify({ isAdmin: token === validToken }), {
           headers: { "Content-Type": "application/json" }
         });
       } catch (error) {
@@ -89,79 +109,95 @@ export default {
     }
 
     // GET list barang dengan pagination
-if (path === "/api/list") {
-  try {
-    // Timeout untuk KV get - versi yang sudah diperbaiki
-    const kvPromise = env.KATALOG.get("items");
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("KV timeout")), 3000)
-    );
-    
-    const data = await Promise.race([kvPromise, timeoutPromise]);
-    
-    let items = [];
-    try {
-      items = JSON.parse(data || "[]");
-    } catch (e) {
-      console.error("Error parsing items:", e);
-      items = [];
-    }
-    
-    // Urutkan dari terlama ke terbaru
-    items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-    
-    // Perbaikan pada bagian pagination
-const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10)); // Perhatikan penutupan kurung
-const startIndex = (page - 1) * limit;
-const endIndex = startIndex + limit;
-    
-    return new Response(JSON.stringify({
-      items: items.slice(startIndex, endIndex),
-      total: items.length,
-      page,
-      limit,
-      hasMore: endIndex < items.length
-    }), {
-      headers: { 
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache"
+    if (path === "/api/list") {
+      try {
+        const kvPromise = env.KATALOG.get("items");
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("KV timeout")), 3000)
+        );
+        
+        const data = await Promise.race([kvPromise, timeoutPromise]);
+        
+        let items = [];
+        try {
+          items = JSON.parse(data || "[]");
+        } catch (e) {
+          console.error("Error parsing items:", e);
+          items = [];
+        }
+        
+        items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        
+        const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10));
+        const startIndex = (page - 1) * limit;
+        const endIndex = Math.min(startIndex + limit, items.length);
+        
+        return new Response(JSON.stringify({
+          items: items.slice(startIndex, endIndex),
+          total: items.length,
+          page,
+          limit,
+          hasMore: endIndex < items.length
+        }), {
+          headers: { 
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-cache"
+          }
+        });
+      } catch (error) {
+        console.error("Error in /api/list:", error);
+        return new Response(JSON.stringify({
+          error: "Internal Server Error",
+          message: error.message
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json; charset=utf-8" }
+        });
       }
-    });
-    
-  } catch (error) {
-    console.error("Error fetching items:", error);
-    return new Response(JSON.stringify({
-      error: "Service Unavailable",
-      message: "Silakan coba lagi dalam beberapa saat",
-      retryAfter: 5
-    }), {
-      status: 503,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
+    }
 
     // POST tambah barang
     if (path === "/api/tambah" && req.method === "POST") {
       try {
-        const cookie = req.headers.get("Cookie") || "";
-        if (!cookie.includes("admin=true")) {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        if (token !== validToken) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
         }
 
         const body = await req.json();
-        if (!body.nama || !body.harga || !body.satuan || !body.base64) {
-          return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 400 });
+        
+        if (!body.nama || typeof body.nama !== "string" || body.nama.trim().length === 0) {
+          return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { status: 400 });
+        }
+        
+        if (!body.harga || isNaN(body.harga) || Number(body.harga) <= 0) {
+          return new Response(JSON.stringify({ error: "Harga harus angka positif" }), { status: 400 });
+        }
+        
+        if (!body.satuan || typeof body.satuan !== "string" || body.satuan.trim().length === 0) {
+          return new Response(JSON.stringify({ error: "Satuan harus diisi" }), { status: 400 });
+        }
+        
+        if (!body.base64 || typeof body.base64 !== "string" || !body.base64.startsWith("data:image/")) {
+          return new Response(JSON.stringify({ error: "Gambar tidak valid" }), { status: 400 });
         }
 
         const items = JSON.parse(await env.KATALOG.get("items") || "[]");
 
         const item = { 
-          ...body, 
-          id: Date.now().toString(),
-          timestamp: Date.now()
+          ...body,
+          id: crypto.randomUUID(),
+          timestamp: Date.now(),
+          nama: body.nama.trim(),
+          satuan: body.satuan.trim(),
+          harga: Number(body.harga)
         };
+        
         items.push(item);
 
         await env.KATALOG.put("items", JSON.stringify(items));
@@ -180,8 +216,12 @@ const endIndex = startIndex + limit;
     // POST hapus barang
     if (path === "/api/hapus" && req.method === "POST") {
       try {
-        const cookie = req.headers.get("Cookie") || "";
-        if (!cookie.includes("admin=true")) {
+        const cookieHeader = req.headers.get("Cookie") || "";
+        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+        const token = cookies.get("admin");
+        const validToken = await env.KATALOG.get("admin_token");
+        
+        if (token !== validToken) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
         }
 
@@ -216,7 +256,6 @@ const INDEX_HTML = `<!DOCTYPE html>
   <title>Katalog Barang</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
   <style>
-    /* Custom Styles */
     .login-modal-buttons {
       display: flex;
       gap: 10px;
@@ -256,13 +295,9 @@ const INDEX_HTML = `<!DOCTYPE html>
       border-radius: 0.375rem;
       font-size: 0.875rem;
     }
-    
-    /* Auto-capitalize input */
     .capitalize-input {
       text-transform: capitalize;
     }
-
-    /* Loading states */
     .skeleton-item {
       background-color: #f3f4f6;
       border-radius: 0.25rem;
@@ -286,8 +321,6 @@ const INDEX_HTML = `<!DOCTYPE html>
     .skeleton-text.medium {
       width: 80%;
     }
-
-    /* Image container */
     .image-container {
       position: relative;
       width: 100%;
@@ -311,8 +344,6 @@ const INDEX_HTML = `<!DOCTYPE html>
     .image-container img.loaded {
       opacity: 1;
     }
-
-    /* Animation */
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -321,8 +352,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       animation: fadeIn 0.3s ease forwards;
       opacity: 0;
     }
-    
-    /* Error and retry button */
     .retry-btn {
       background-color: #3b82f6;
       color: white;
@@ -336,15 +365,11 @@ const INDEX_HTML = `<!DOCTYPE html>
     .retry-btn:hover {
       background-color: #2563eb;
     }
-
-    /* Loading indicator */
     .loading-indicator {
       text-align: center;
       padding: 1rem;
       color: #6b7280;
     }
-    
-    /* Error message */
     .error-message {
       color: #ef4444;
       text-align: center;
@@ -366,7 +391,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       <h1 class="text-2xl font-bold title-center">📦 Katalog Barang</h1>
     </div>
     
-    <!-- Admin Login Modal -->
     <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white p-6 rounded-lg shadow-lg w-80">
         <h2 class="text-xl font-bold mb-4">Login Admin</h2>
@@ -391,13 +415,11 @@ const INDEX_HTML = `<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Admin Controls -->
     <div id="adminControls" class="hidden mb-6">
       <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
         Logout
       </button>
       
-      <!-- Form Tambah Barang -->
       <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
         <div>
           <label class="block mb-1 font-medium">Nama Barang</label>
@@ -430,7 +452,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       </form>
     </div>
 
-    <!-- Katalog -->
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
     <div id="loadingIndicator" class="loading-indicator hidden">Memuat...</div>
     <div id="errorMessage" class="error-message hidden"></div>
@@ -451,8 +472,9 @@ class BarangApp {
     this.maxRetries = 3;
     this.retryCount = 0;
     this.baseDelay = 1000;
+    this.abortController = null;
+    this.scrollDebounce = null;
     
-    // Untuk infinite scroll
     this.observer = new IntersectionObserver(
       (entries) => this.handleScroll(entries),
       { threshold: 0.1 }
@@ -493,6 +515,16 @@ class BarangApp {
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
     this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
+  }
+
+  cleanup() {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.observer.disconnect();
+    if (this.scrollDebounce) {
+      clearTimeout(this.scrollDebounce);
+    }
   }
 
   autoCapitalize(event, force = false) {
@@ -551,42 +583,30 @@ class BarangApp {
   }
 
   async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    
+    this.abortController = new AbortController();
+    
     try {
-      // Tambahkan timeout untuk fetch
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => this.abortController.abort(), 10000);
       
       const response = await fetch(url, {
         ...options,
-        signal: controller.signal
+        signal: this.abortController.signal
       });
       
       clearTimeout(timeoutId);
       
-      if (!response.ok) {
-        // Handle 503 khusus
-        if (response.status === 503) {
-          const data = await response.json();
-          const retryAfter = data.retryAfter || 5;
-          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-          return this.fetchWithRetry(url, options, retries - 1);
-        }
-        throw new Error(\`HTTP error! status: \${response.status}\`);
-      }
+      if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);
       
-      this.retryCount = 0; // Reset counter jika sukses
       return response;
-      
     } catch (error) {
+      if (error.name === 'AbortError') throw error;
       if (retries <= 0) throw error;
       
-      // Exponential backoff
-      const delay = Math.min(
-        this.baseDelay * Math.pow(2, this.retryCount),
-        30000 // Max 30 detik
-      );
-      
-      this.retryCount++;
+      const delay = Math.min(this.baseDelay * Math.pow(2, this.maxRetries - retries), 30000);
       await new Promise(resolve => setTimeout(resolve, delay));
       return this.fetchWithRetry(url, options, retries - 1);
     }
@@ -711,7 +731,6 @@ class BarangApp {
       this.form.reset();
       this.imagePreviewContainer.classList.add('hidden');
       
-      // Tambahkan item baru ke tampilan
       this.addNewItemToView({
         ...result,
         id: result.id,
@@ -790,9 +809,24 @@ class BarangApp {
       }
 
       const response = await this.fetchWithRetry(
-        \`/api/list?page=\${this.currentPage}&limit=\${this.itemsPerPage}&t=\${Date.now()}\`
+        \`/api/list?\${new URLSearchParams({ 
+          page: this.currentPage, 
+          limit: this.itemsPerPage,
+          _: Date.now() 
+        })}\`
       );
-      
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(\`Invalid response: \${text.substring(0, 100)}\`);
+      }
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || \`HTTP error! status: \${response.status}\`);
+      }
+
       const { items, hasMore } = await response.json();
       this.hasMoreItems = hasMore;
       
@@ -815,15 +849,17 @@ class BarangApp {
       });
 
     } catch (error) {
-      console.error('Error:', error);
-      if (error.message.includes('503')) {
-        this.showError('Server sibuk, silakan coba lagi dalam beberapa saat');
+      console.error('Failed to load items:', error);
+      
+      let errorMsg = 'Gagal memuat data';
+      if (error.message.includes('Invalid response') && error.message.includes('<!DOCTYPE')) {
+        errorMsg = 'Terjadi kesalahan pada server (mengembalikan HTML bukan JSON)';
       } else {
-        this.showError('Gagal memuat data: ' + error.message);
+        errorMsg = error.message || errorMsg;
       }
       
-      // Reset untuk memungkinkan retry
-      this.hasMoreItems = true;
+      this.showError(errorMsg);
+      
       if (this.currentPage > 1) {
         this.currentPage--;
       }
@@ -836,12 +872,18 @@ class BarangApp {
   handleScroll(entries) {
     if (this.isLoading || !this.hasMoreItems) return;
     
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        this.currentPage++;
-        this.loadBarang();
-      }
-    });
+    if (this.scrollDebounce) {
+      clearTimeout(this.scrollDebounce);
+    }
+    
+    this.scrollDebounce = setTimeout(() => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          this.currentPage++;
+          this.loadBarang();
+        }
+      });
+    }, 200);
   }
 
   createItemElement(item, index) {
@@ -917,4 +959,10 @@ class BarangApp {
 
 const app = new BarangApp();
 window.app = app;
+
+window.addEventListener('beforeunload', () => {
+  if (window.app) {
+    window.app.cleanup();
+  }
+});
 `;
