@@ -743,14 +743,13 @@ let width = img.width;
 
     try {
       if (this.currentPage === 1) {
-        this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
-          <div class="bg-white p-3 rounded shadow skeleton-item">
-            <div class="skeleton-image"></div>
-            <div class="skeleton-text medium"></div>
-            <div class="skeleton-text short"></div>
-          </div>
-        \`).join('');
-      }
+        this.katalog.innerHTML = Array.from({ length: 6 }, () => `
+  <div class="bg-white p-3 rounded shadow skeleton-item">
+    <div class="skeleton-image"></div>
+    <div class="skeleton-text medium"></div>
+    <div class="skeleton-text short"></div>
+  </div>
+`).join('');
 
       const response = await this.fetchWithRetry(
         \`/api/list?\${new URLSearchParams({ 
