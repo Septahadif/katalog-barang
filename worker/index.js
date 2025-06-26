@@ -314,9 +314,6 @@ export default {
   }
 }
 
-// ... (INDEX_HTML dan SCRIPT_JS tetap sama seperti sebelumnya)
-}
-
 const INDEX_HTML = `<!DOCTYPE html>
 <html lang="id">
 <head>
