@@ -135,71 +135,72 @@ export default {
     }
 
     // GET list barang dengan pagination dan cache - FIXED
-    if (path === "/api/list") {
+    // GET list barang dengan pagination dan cache - FIXED
+if (path === "/api/list") {
+  try {
+    const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
+    
+    // Check cache
+    const cacheKey = new Request(url.toString());
+    const cached = await caches.default.match(cacheKey);
+    if (cached) return cached;
+
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("KV timeout")), 3000)
+    );
+    
+    // FIX: Handle case where items don't exist in KV yet
+    const itemsData = await env.KATALOG.get("items");
+    let items = [];
+    
+    if (itemsData) {
       try {
-        const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
-        
-        // Check cache
-        const cacheKey = new Request(url.toString());
-        const cached = await caches.default.match(cacheKey);
-        if (cached) return cached;
-
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("KV timeout")), 3000)
-        );
-        
-        // FIX: Handle case where items don't exist in KV yet
-        const itemsData = await env.KATALOG.get("items");
-        let items = [];
-        
-        if (itemsData) {
-          try {
-            items = JSON.parse(itemsData);
-          } catch (e) {
-            console.error("Failed to parse items:", e);
-            items = [];
-          }
-        }
-        
-        // Ensure items is an array
-        if (!Array.isArray(items)) {
-          items = [];
-        }
-        
-        // Sort by timestamp (newest first)
-        items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        
-        const startIndex = (page - 1) * limit;
-        const endIndex = Math.min(startIndex + limit, items.length);
-        
-        const response = new Response(JSON.stringify({
-          items: items.slice(startIndex, endIndex),
-          total: items.length,
-          page,
-          limit,
-          hasMore: endIndex < items.length
-        }), {
-          headers: { 
-            "Content-Type": "application/json; charset=utf-8",
-            "Cache-Control": "public, max-age=60"
-          }
-        });
-
-        // Store in cache
-        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
-        return response;
-      } catch (error) {
-        console.error("Error in /api/list:", error);
-        return new Response(JSON.stringify({
-          error: "Internal Server Error",
-          message: error.message
-        }), {
-          status: 500,
-          headers: { "Content-Type": "application/json; charset=utf-8" }
-        });
+        items = JSON.parse(itemsData);
+      } catch (e) {
+        console.error("Failed to parse items:", e);
+        items = [];
       }
     }
+    
+    // Ensure items is an array
+    if (!Array.isArray(items)) {
+      items = [];
+    }
+    
+    // Sort by timestamp (newest first)
+    items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    
+    const startIndex = (page - 1) * limit;
+    const endIndex = Math.min(startIndex + limit, items.length);
+    
+    const response = new Response(JSON.stringify({
+      items: items.slice(startIndex, endIndex),
+      total: items.length,
+      page,
+      limit,
+      hasMore: endIndex < items.length
+    }), {
+      headers: { 
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=60"
+      }
+    });
+
+    // Store in cache
+    ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+    return response;
+  } catch (error) {
+    console.error("Error in /api/list:", error);
+    return new Response(JSON.stringify({
+      error: "Internal Server Error",
+      message: error.message
+    }), {
+      status: 500,
+      headers: { "Content-Type": "application/json; charset=utf-8" }
+    });
+  }
+}
 
     // POST tambah barang
     if (path === "/api/tambah" && req.method === "POST") {
