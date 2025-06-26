@@ -75,33 +75,10 @@ export default {
       });
     }
 
-    // GET list barang with pagination
+    // GET list barang
     if (path === "/api/list") {
-      const page = parseInt(url.searchParams.get("page")) || 1;
-      const perPage = 10;
-      
       const data = await env.KATALOG.get("items");
-      const items = JSON.parse(data || "[]");
-      
-      // Sort by timestamp descending (newest first)
-      items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      
-      const totalItems = items.length;
-      const totalPages = Math.ceil(totalItems / perPage);
-      const startIndex = (page - 1) * perPage;
-      const endIndex = Math.min(startIndex + perPage, totalItems);
-      
-      const paginatedItems = items.slice(startIndex, endIndex);
-      
-      return new Response(JSON.stringify({
-        items: paginatedItems,
-        pagination: {
-          currentPage: page,
-          totalPages,
-          totalItems,
-          perPage
-        }
-      }), {
+      return new Response(data || "[]", {
         headers: { 
           "Content-Type": "application/json",
           "Cache-Control": "no-cache"
@@ -268,21 +245,6 @@ const INDEX_HTML = `<!DOCTYPE html>
       animation: fadeIn 0.3s ease forwards;
       opacity: 0;
     }
-
-    /* Loading spinner */
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #3498db;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 20px auto;
-    }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -323,9 +285,14 @@ const INDEX_HTML = `<!DOCTYPE html>
 
     <!-- Admin Controls -->
     <div id="adminControls" class="hidden mb-6">
-      <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
-        Logout
-      </button>
+      <div class="flex gap-2">
+        <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
+          Logout
+        </button>
+        <button id="downloadBtn" class="bg-green-600 text-white px-4 py-2 rounded mb-4 hover:bg-green-700 transition">
+          Download Data
+        </button>
+      </div>
       
       <!-- Form Tambah Barang -->
       <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
@@ -362,9 +329,6 @@ const INDEX_HTML = `<!DOCTYPE html>
 
     <!-- Katalog -->
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
-    <div id="loadingIndicator" class="hidden">
-      <div class="loading-spinner"></div>
-    </div>
   </div>
 
   <script src="script.js"></script>
@@ -375,20 +339,14 @@ const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
     this.isAdmin = false;
-    this.currentPage = 1;
-    this.totalPages = 1;
-    this.isLoading = false;
-    this.hasMoreItems = true;
-    this.imageRefreshInterval = 30000; // 30 seconds
-    this.refreshIntervals = {}; // Store intervals for each image
+    this.loadingQueue = [];
+    this.currentLoadingIndex = 0;
+    this.loadingBatchSize = 4;
     
     this.initElements();
     this.initEventListeners();
     this.checkAdminStatus();
     this.loadBarang();
-    
-    // Setup scroll listener for infinite loading
-    window.addEventListener('scroll', () => this.handleScroll());
   }
 
   initElements() {
@@ -398,6 +356,7 @@ class BarangApp {
     this.loginModal = document.getElementById('loginModal');
     this.loginForm = document.getElementById('loginForm');
     this.logoutBtn = document.getElementById('logoutBtn');
+    this.downloadBtn = document.getElementById('downloadBtn');
     this.showLoginBtn = document.getElementById('showLoginBtn');
     this.cancelLoginBtn = document.getElementById('cancelLoginBtn');
     this.fileInput = document.getElementById('gambar');
@@ -405,13 +364,13 @@ class BarangApp {
     this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
     this.namaInput = document.getElementById('nama');
     this.satuanInput = document.getElementById('satuan');
-    this.loadingIndicator = document.getElementById('loadingIndicator');
   }
 
   initEventListeners() {
     this.form.addEventListener('submit', (e) => this.handleSubmit(e));
     this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
     this.logoutBtn.addEventListener('click', () => this.handleLogout());
+    this.downloadBtn.addEventListener('click', () => this.downloadData());
     this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
     this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
@@ -490,9 +449,6 @@ class BarangApp {
         this.isAdmin = true;
         this.toggleAdminUI();
         this.loginModal.classList.add('hidden');
-        // Reset pagination when logging in
-        this.currentPage = 1;
-        this.katalog.innerHTML = '';
         this.loadBarang();
       } else {
         alert('Login gagal! Periksa username dan password');
@@ -508,12 +464,43 @@ class BarangApp {
       await fetch('/api/logout');
       this.isAdmin = false;
       this.toggleAdminUI();
-      // Reset pagination when logging out
-      this.currentPage = 1;
-      this.katalog.innerHTML = '';
       this.loadBarang();
     } catch (error) {
       console.error('Logout error:', error);
+    }
+  }
+
+  async downloadData() {
+    try {
+      const response = await fetch('/api/list');
+      if (!response.ok) throw new Error('Gagal memuat data');
+      
+      const items = await response.json();
+      if (items.length === 0) {
+        alert('Tidak ada data untuk didownload');
+        return;
+      }
+
+      // Create a JSON string
+      const dataStr = JSON.stringify(items, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      
+      // Create download link
+      const url = URL.createObjectURL(dataBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = \`katalog-barang-\${new Date().toISOString().split('T')[0]}.json\`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    } catch (error) {
+      console.error('Download error:', error);
+      alert('Error: ' + error.message);
     }
   }
 
@@ -582,9 +569,6 @@ class BarangApp {
       alert('Barang berhasil ditambahkan!');
       this.form.reset();
       this.imagePreviewContainer.classList.add('hidden');
-      // Reset pagination when adding new item
-      this.currentPage = 1;
-      this.katalog.innerHTML = '';
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
@@ -635,58 +619,49 @@ class BarangApp {
   }
 
   async loadBarang() {
-    if (this.isLoading || !this.hasMoreItems) return;
-    
-    this.isLoading = true;
-    this.loadingIndicator.classList.remove('hidden');
-    
     try {
-      // Show skeleton loading for first page
-      if (this.currentPage === 1) {
-        this.katalog.innerHTML = Array.from({ length: 10 }, () => \`
-          <div class="bg-white p-3 rounded shadow skeleton-item">
-            <div class="skeleton-image"></div>
-            <div class="skeleton-text medium"></div>
-            <div class="skeleton-text short"></div>
-          </div>
-        \`).join('');
-      }
+      this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
+        <div class="bg-white p-3 rounded shadow skeleton-item">
+          <div class="skeleton-image"></div>
+          <div class="skeleton-text medium"></div>
+          <div class="skeleton-text short"></div>
+        </div>
+      \`).join('');
 
-      const response = await fetch(\`/api/list?page=\${this.currentPage}&t=\${Date.now()}\`);
+      const response = await fetch('/api/list?t=' + Date.now());
       if (!response.ok) throw new Error('Gagal memuat data');
       
-      const { items, pagination } = await response.json();
+      const items = await response.json();
       
-      this.totalPages = pagination.totalPages;
-      this.hasMoreItems = this.currentPage < this.totalPages;
-      
-      if (items.length === 0 && this.currentPage === 1) {
+      if (items.length === 0) {
         this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
         return;
       }
 
-      // If it's the first page, clear the container
-      if (this.currentPage === 1) {
-        this.katalog.innerHTML = '';
-      }
-
-      // Add items to DOM with animation
-      items.forEach((item, index) => {
-        this.addItemToDOM(item, index);
-      });
-      
-      // Increment page for next load
-      if (items.length > 0) {
-        this.currentPage++;
-      }
+      this.katalog.innerHTML = '';
+      this.loadingQueue = items;
+      this.currentLoadingIndex = 0;
+      this.processLoadingQueue();
     } catch (error) {
       console.error('Error:', error);
-      if (this.currentPage === 1) {
-        this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
-      }
-    } finally {
-      this.isLoading = false;
-      this.loadingIndicator.classList.add('hidden');
+      this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
+    }
+  }
+
+  processLoadingQueue() {
+    const endIndex = Math.min(
+      this.currentLoadingIndex + this.loadingBatchSize,
+      this.loadingQueue.length
+    );
+
+    for (let i = this.currentLoadingIndex; i < endIndex; i++) {
+      this.addItemToDOM(this.loadingQueue[i], i);
+    }
+
+    this.currentLoadingIndex = endIndex;
+
+    if (this.currentLoadingIndex < this.loadingQueue.length) {
+      setTimeout(() => this.processLoadingQueue(), 100);
     }
   }
 
@@ -709,7 +684,6 @@ class BarangApp {
           class="loading" 
           loading="lazy"
           onload="this.classList.remove('loading'); this.classList.add('loaded')"
-          data-id="\${escapedId}"
         >
       </div>
       <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
@@ -720,38 +694,6 @@ class BarangApp {
     \`;
     
     this.katalog.appendChild(itemElement);
-    
-    // Setup auto-refresh for this image
-    this.setupImageAutoRefresh(escapedId);
-  }
-
-  setupImageAutoRefresh(itemId) {
-    // Clear any existing interval for this item
-    if (this.refreshIntervals[itemId]) {
-      clearInterval(this.refreshIntervals[itemId]);
-    }
-    
-    // Set up new interval
-    this.refreshIntervals[itemId] = setInterval(() => {
-      const imgElement = document.querySelector(\`img[data-id="\${itemId}"]\`);
-      if (imgElement) {
-        // Add a timestamp to force refresh
-        imgElement.src = \`/api/image/\${itemId}?t=\${Date.now()}\`;
-        imgElement.classList.add('loading');
-        imgElement.classList.remove('loaded');
-      }
-    }, this.imageRefreshInterval);
-  }
-
-  handleScroll() {
-    // Check if we've scrolled 75% down the page and there are more items to load
-    const scrollPosition = window.innerHeight + window.scrollY;
-    const pageHeight = document.body.offsetHeight;
-    const threshold = pageHeight * 0.75;
-    
-    if (scrollPosition >= threshold && this.hasMoreItems && !this.isLoading) {
-      this.loadBarang();
-    }
   }
 
   async hapusBarang(id) {
@@ -759,19 +701,10 @@ class BarangApp {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      // Clear the refresh interval for this item
-      if (this.refreshIntervals[id]) {
-        clearInterval(this.refreshIntervals[id]);
-        delete this.refreshIntervals[id];
-      }
-
       const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
       if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
-      // Reset pagination when deleting item
-      this.currentPage = 1;
-      this.katalog.innerHTML = '';
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
