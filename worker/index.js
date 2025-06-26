@@ -848,11 +848,16 @@ class BarangApp {
     });
 
     // 4. Handle Response
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const errorMsg = errorData.message || 
-                      errorData.error || 
-                      `HTTP error! status: ${response.status}`;
+    // Di dalam method handleSubmit (script.js)
+if (!response.ok) {
+      const errorText = await response.text();
+      let errorMsg = `Request failed with status ${response.status}`;
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMsg = errorData.message || errorData.error || errorMsg;
+      } catch (e) {
+        errorMsg = `${errorMsg}: ${errorText.substring(0, 100)}`;
+      }
       throw new Error(errorMsg);
     }
 
