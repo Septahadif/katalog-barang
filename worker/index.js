@@ -77,39 +77,91 @@ export default {
 
     // GET list barang
     if (path === "/api/list") {
-      const data = await env.KATALOG.get("items");
-      return new Response(data || "[]", {
-        headers: { 
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache"
-        },
-      });
+      try {
+        const response = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+          headers: {
+            'Authorization': `token ${env.GITHUB_TOKEN}`,
+            'User-Agent': 'Cloudflare-Worker'
+          }
+        });
+        
+        if (!response.ok) throw new Error('Gagal mengambil data dari GitHub');
+        
+        const data = await response.json();
+        const content = atob(data.content);
+        return new Response(content, {
+          headers: { 
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache"
+          },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" }
+        });
+      }
     }
 
-    // POST tambah barang (hanya admin)
+    // POST tambah barang - Diubah untuk commit ke GitHub
     if (path === "/api/tambah" && req.method === "POST") {
       const cookie = req.headers.get("Cookie") || "";
       if (!cookie.includes("admin=true")) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
       }
 
-      const body = await req.json();
-      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-
-      const item = { 
-        ...body, 
-        id: Date.now().toString(),
-        timestamp: Date.now()
-      };
-      items.push(item);
-
-      await env.KATALOG.put("items", JSON.stringify(items));
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
+      try {
+        const body = await req.json();
+        
+        // 1. Dapatkan data yang ada
+        const getResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+          headers: {
+            'Authorization': `token ${env.GITHUB_TOKEN}`,
+            'User-Agent': 'Cloudflare-Worker'
+          }
+        });
+        
+        if (!getResponse.ok) throw new Error('Gagal mengambil data dari GitHub');
+        
+        const existingData = await getResponse.json();
+        const items = JSON.parse(atob(existingData.content));
+        
+        // 2. Tambah item baru
+        const item = { 
+          ...body, 
+          id: Date.now().toString(),
+          timestamp: Date.now()
+        };
+        items.push(item);
+        
+        // 3. Update file di GitHub
+        const updateResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+          method: 'PUT',
+          headers: {
+            'Authorization': `token ${env.GITHUB_TOKEN}`,
+            'User-Agent': 'Cloudflare-Worker',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: `Tambah barang: ${body.nama}`,
+            content: btoa(JSON.stringify(items)),
+            sha: existingData.sha
+          })
+        });
+        
+        if (!updateResponse.ok) throw new Error('Gagal menyimpan ke GitHub');
+        
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), { 
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
     }
 
-    // POST hapus barang (hanya admin)
+    // POST hapus barang - Diubah untuk commit ke GitHub
     if (path === "/api/hapus" && req.method === "POST") {
       const cookie = req.headers.get("Cookie") || "";
       if (!cookie.includes("admin=true")) {
@@ -119,13 +171,47 @@ export default {
       const id = url.searchParams.get("id");
       if (!id) return new Response("Missing ID", { status: 400 });
 
-      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-      const updated = items.filter(item => item.id !== id);
-      await env.KATALOG.put("items", JSON.stringify(updated));
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
+      try {
+        // 1. Dapatkan data yang ada
+        const getResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+          headers: {
+            'Authorization': `token ${env.GITHUB_TOKEN}`,
+            'User-Agent': 'Cloudflare-Worker'
+          }
+        });
+        
+        if (!getResponse.ok) throw new Error('Gagal mengambil data dari GitHub');
+        
+        const existingData = await getResponse.json();
+        const items = JSON.parse(atob(existingData.content));
+        const updated = items.filter(item => item.id !== id);
+        
+        // 2. Update file di GitHub
+        const updateResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+          method: 'PUT',
+          headers: {
+            'Authorization': `token ${env.GITHUB_TOKEN}`,
+            'User-Agent': 'Cloudflare-Worker',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: `Hapus barang ID: ${id}`,
+            content: btoa(JSON.stringify(updated)),
+            sha: existingData.sha
+          })
+        });
+        
+        if (!updateResponse.ok) throw new Error('Gagal menyimpan ke GitHub');
+        
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), { 
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
     }
 
     return new Response("404 Not Found", { status: 404 });
@@ -285,14 +371,9 @@ const INDEX_HTML = `<!DOCTYPE html>
 
     <!-- Admin Controls -->
     <div id="adminControls" class="hidden mb-6">
-      <div class="flex gap-2">
-        <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
-          Logout
-        </button>
-        <button id="downloadBtn" class="bg-green-600 text-white px-4 py-2 rounded mb-4 hover:bg-green-700 transition">
-          Download Data
-        </button>
-      </div>
+      <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded mb-4 hover:bg-red-700 transition">
+        Logout
+      </button>
       
       <!-- Form Tambah Barang -->
       <form id="formBarang" class="bg-white p-4 rounded shadow space-y-3 mb-6">
@@ -356,7 +437,6 @@ class BarangApp {
     this.loginModal = document.getElementById('loginModal');
     this.loginForm = document.getElementById('loginForm');
     this.logoutBtn = document.getElementById('logoutBtn');
-    this.downloadBtn = document.getElementById('downloadBtn');
     this.showLoginBtn = document.getElementById('showLoginBtn');
     this.cancelLoginBtn = document.getElementById('cancelLoginBtn');
     this.fileInput = document.getElementById('gambar');
@@ -370,7 +450,6 @@ class BarangApp {
     this.form.addEventListener('submit', (e) => this.handleSubmit(e));
     this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
     this.logoutBtn.addEventListener('click', () => this.handleLogout());
-    this.downloadBtn.addEventListener('click', () => this.downloadData());
     this.showLoginBtn.addEventListener('click', () => this.showLoginModal());
     this.cancelLoginBtn.addEventListener('click', () => this.cancelLogin());
     this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
@@ -467,40 +546,6 @@ class BarangApp {
       this.loadBarang();
     } catch (error) {
       console.error('Logout error:', error);
-    }
-  }
-
-  async downloadData() {
-    try {
-      const response = await fetch('/api/list');
-      if (!response.ok) throw new Error('Gagal memuat data');
-      
-      const items = await response.json();
-      if (items.length === 0) {
-        alert('Tidak ada data untuk didownload');
-        return;
-      }
-
-      // Create a JSON string
-      const dataStr = JSON.stringify(items, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      
-      // Create download link
-      const url = URL.createObjectURL(dataBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = \`katalog-barang-\${new Date().toISOString().split('T')[0]}.json\`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Clean up
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 100);
-    } catch (error) {
-      console.error('Download error:', error);
-      alert('Error: ' + error.message);
     }
   }
 
