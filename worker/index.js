@@ -110,11 +110,11 @@ if (path === "/api/list") {
     // Urutkan dari terlama ke terbaru
     items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
     
-    // Pagination dengan batasan
-    const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
+    // Perbaikan pada bagian pagination
+const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
+const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10)); // Perhatikan penutupan kurung
+const startIndex = (page - 1) * limit;
+const endIndex = startIndex + limit;
     
     return new Response(JSON.stringify({
       items: items.slice(startIndex, endIndex),
