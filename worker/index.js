@@ -91,12 +91,13 @@ export default {
     // GET list barang dengan pagination
 if (path === "/api/list") {
   try {
-    // Timeout untuk KV get - perbaikan sintaks
-    const data = await Promise.race([
-      env.KATALOG.get("items"),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("KV timeout")), 3000)
-    ]); // <-- Ini penutup yang benar untuk Promise.race
+    // Timeout untuk KV get - versi yang sudah diperbaiki
+    const kvPromise = env.KATALOG.get("items");
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("KV timeout")), 3000)
+    );
+    
+    const data = await Promise.race([kvPromise, timeoutPromise]);
     
     let items = [];
     try {
