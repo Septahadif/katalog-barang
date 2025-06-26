@@ -78,7 +78,7 @@ export default {
     // GET list barang
     if (path === "/api/list") {
       try {
-        const response = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+        const response = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/contents/data/item.json', {
           headers: {
             'Authorization': `token ${env.GITHUB_TOKEN}`,
             'User-Agent': 'Cloudflare-Worker'
@@ -113,7 +113,7 @@ export default {
         const body = await req.json();
         
         // 1. Dapatkan data yang ada
-        const getResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+        const getResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/contents/data/item.json', {
           headers: {
             'Authorization': `token ${env.GITHUB_TOKEN}`,
             'User-Agent': 'Cloudflare-Worker'
@@ -134,7 +134,7 @@ export default {
         items.push(item);
         
         // 3. Update file di GitHub
-        const updateResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+        const updateResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/contents/data/item.json', {
           method: 'PUT',
           headers: {
             'Authorization': `token ${env.GITHUB_TOKEN}`,
@@ -173,7 +173,7 @@ export default {
 
       try {
         // 1. Dapatkan data yang ada
-        const getResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+        const getResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/contents/data/item.json', {
           headers: {
             'Authorization': `token ${env.GITHUB_TOKEN}`,
             'User-Agent': 'Cloudflare-Worker'
@@ -187,7 +187,7 @@ export default {
         const updated = items.filter(item => item.id !== id);
         
         // 2. Update file di GitHub
-        const updateResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/main/data/items.json', {
+        const updateResponse = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/contents/data/item.json', {
           method: 'PUT',
           headers: {
             'Authorization': `token ${env.GITHUB_TOKEN}`,
