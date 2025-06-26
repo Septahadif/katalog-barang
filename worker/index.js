@@ -880,7 +880,8 @@ if (!response.ok) {
 
   } catch (error) {
     console.error('Submit error:', error);
-    this.showMessage(`Gagal: ${error.message}`, 'error');
+    // Ganti dengan:
+      this.showMessage("Gagal: " + error.message, "error");
     
     // Auto-retry untuk error 503
     if (error.message.includes('503')) {
