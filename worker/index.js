@@ -30,7 +30,6 @@ export default {
           return new Response("Image not found", { status: 404 });
         }
 
-        // Extract image data from base64
         const base64Data = item.base64.split(',')[1] || item.base64;
         const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
         
@@ -92,22 +91,32 @@ export default {
     // GET list barang dengan pagination
     if (path === "/api/list") {
       try {
-        const data = await env.KATALOG.get("items");
-        let items = JSON.parse(data || "[]");
+        // Timeout untuk KV get
+        const data = await Promise.race([
+          env.KATALOG.get("items"),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("KV timeout")), 3000)
+        ]);
         
-        // Urutkan dari yang terlama ke terbaru (yang lama di atas, baru di bawah)
+        let items = [];
+        try {
+          items = JSON.parse(data || "[]");
+        } catch (e) {
+          console.error("Error parsing items:", e);
+          items = [];
+        }
+        
+        // Urutkan dari terlama ke terbaru
         items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         
-        // Pagination
-        const page = parseInt(url.searchParams.get("page")) || 1;
-        const limit = parseInt(url.searchParams.get("limit")) || 10;
+        // Pagination dengan batasan
+        const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
         const startIndex = (page - 1) * limit;
         const endIndex = startIndex + limit;
         
-        const paginatedItems = items.slice(startIndex, endIndex);
-        
         return new Response(JSON.stringify({
-          items: paginatedItems,
+          items: items.slice(startIndex, endIndex),
           total: items.length,
           page,
           limit,
@@ -118,20 +127,16 @@ export default {
             "Cache-Control": "no-cache"
           }
         });
+        
       } catch (error) {
         console.error("Error fetching items:", error);
         return new Response(JSON.stringify({
-          items: [],
-          total: 0,
-          page: 1,
-          limit: 10,
-          hasMore: false
+          error: "Service Unavailable",
+          message: "Silakan coba lagi dalam beberapa saat",
+          retryAfter: 5
         }), {
-          headers: { 
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache"
-          },
-          status: 500
+          status: 503,
+          headers: { "Content-Type": "application/json" }
         });
       }
     }
@@ -337,6 +342,16 @@ const INDEX_HTML = `<!DOCTYPE html>
       padding: 1rem;
       color: #6b7280;
     }
+    
+    /* Error message */
+    .error-message {
+      color: #ef4444;
+      text-align: center;
+      padding: 1rem;
+      background-color: #fee2e2;
+      border-radius: 0.375rem;
+      margin: 1rem 0;
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -417,6 +432,7 @@ const INDEX_HTML = `<!DOCTYPE html>
     <!-- Katalog -->
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
     <div id="loadingIndicator" class="loading-indicator hidden">Memuat...</div>
+    <div id="errorMessage" class="error-message hidden"></div>
   </div>
 
   <script src="script.js"></script>
@@ -428,11 +444,12 @@ class BarangApp {
   constructor() {
     this.isAdmin = false;
     this.currentPage = 1;
-    this.itemsPerPage = 10;  // 10 item per load
+    this.itemsPerPage = 10;
     this.hasMoreItems = true;
     this.isLoading = false;
     this.maxRetries = 3;
-    this.retryDelay = 1000;
+    this.retryCount = 0;
+    this.baseDelay = 1000;
     
     // Untuk infinite scroll
     this.observer = new IntersectionObserver(
@@ -461,6 +478,7 @@ class BarangApp {
     this.namaInput = document.getElementById('nama');
     this.satuanInput = document.getElementById('satuan');
     this.loadingIndicator = document.getElementById('loadingIndicator');
+    this.errorMessage = document.getElementById('errorMessage');
   }
 
   initEventListeners() {
@@ -533,12 +551,42 @@ class BarangApp {
 
   async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
     try {
-      const response = await fetch(url, options);
-      if (!response.ok) throw new Error("HTTP error! status: " + response.status);
+      // Tambahkan timeout untuk fetch
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        // Handle 503 khusus
+        if (response.status === 503) {
+          const data = await response.json();
+          const retryAfter = data.retryAfter || 5;
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          return this.fetchWithRetry(url, options, retries - 1);
+        }
+        throw new Error(\`HTTP error! status: \${response.status}\`);
+      }
+      
+      this.retryCount = 0; // Reset counter jika sukses
       return response;
+      
     } catch (error) {
       if (retries <= 0) throw error;
-      await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+      
+      // Exponential backoff
+      const delay = Math.min(
+        this.baseDelay * Math.pow(2, this.retryCount),
+        30000 // Max 30 detik
+      );
+      
+      this.retryCount++;
+      await new Promise(resolve => setTimeout(resolve, delay));
       return this.fetchWithRetry(url, options, retries - 1);
     }
   }
@@ -561,11 +609,11 @@ class BarangApp {
         this.loginModal.classList.add('hidden');
         this.resetAndLoad();
       } else {
-        alert('Login gagal! Periksa username dan password');
+        this.showError('Login gagal! Periksa username dan password');
       }
     } catch (error) {
       console.error('Login error:', error);
-      alert('Terjadi kesalahan saat login. Silakan coba lagi.');
+      this.showError('Terjadi kesalahan saat login. Silakan coba lagi.');
     }
   }
 
@@ -577,7 +625,7 @@ class BarangApp {
       this.resetAndLoad();
     } catch (error) {
       console.error('Logout error:', error);
-      alert('Terjadi kesalahan saat logout. Silakan coba lagi.');
+      this.showError('Terjadi kesalahan saat logout. Silakan coba lagi.');
     }
   }
 
@@ -594,7 +642,7 @@ class BarangApp {
 
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'];
     if (!validTypes.includes(file.type)) {
-      alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
+      this.showError('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, WebP, atau AVIF.');
       this.fileInput.value = '';
       return;
     }
@@ -606,11 +654,19 @@ class BarangApp {
     };
     
     reader.onerror = () => {
-      alert('Gagal membaca file. Coba lagi.');
+      this.showError('Gagal membaca file. Coba lagi.');
       this.fileInput.value = '';
     };
     
     reader.readAsDataURL(file);
+  }
+
+  showError(message) {
+    this.errorMessage.textContent = message;
+    this.errorMessage.classList.remove('hidden');
+    setTimeout(() => {
+      this.errorMessage.classList.add('hidden');
+    }, 5000);
   }
 
   async handleSubmit(e) {
@@ -632,7 +688,6 @@ class BarangApp {
         throw new Error('Semua field harus diisi');
       }
 
-      // Create a square version of the image
       const base64 = await this.createSquareImage(formData.gambar);
 
       const response = await this.fetchWithRetry('/api/tambah', {
@@ -651,11 +706,11 @@ class BarangApp {
         throw new Error(result.error || 'Gagal menambahkan barang');
       }
 
-      alert('Barang berhasil ditambahkan!');
+      this.showError('Barang berhasil ditambahkan!');
       this.form.reset();
       this.imagePreviewContainer.classList.add('hidden');
       
-      // Tambahkan item baru ke tampilan tanpa reload semua
+      // Tambahkan item baru ke tampilan
       this.addNewItemToView({
         ...result,
         id: result.id,
@@ -667,7 +722,7 @@ class BarangApp {
       });
     } catch (error) {
       console.error('Error:', error);
-      alert('Error: ' + error.message);
+      this.showError('Error: ' + error.message);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Tambah Barang';
@@ -675,13 +730,8 @@ class BarangApp {
   }
 
   addNewItemToView(item) {
-    // Buat elemen baru untuk item yang ditambahkan
     const itemElement = this.createItemElement(item, 0);
-    
-    // Tambahkan ke akhir daftar
     this.katalog.appendChild(itemElement);
-    
-    // Scroll ke item baru
     itemElement.scrollIntoView({ behavior: 'smooth' });
   }
 
@@ -696,17 +746,14 @@ class BarangApp {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          // Determine the size of the square (use the smaller dimension)
           const size = Math.min(img.width, img.height);
           canvas.width = size;
           canvas.height = size;
           
-          // Draw the image centered and cropped to square
           const offsetX = (img.width - size) / 2;
           const offsetY = (img.height - size) / 2;
           ctx.drawImage(img, offsetX, offsetY, size, size, 0, 0, size, size);
           
-          // Convert to base64 with quality 85%
           const base64 = canvas.toDataURL('image/jpeg', 0.85);
           resolve(base64);
         };
@@ -728,9 +775,9 @@ class BarangApp {
     if (this.isLoading || !this.hasMoreItems) return;
     this.isLoading = true;
     this.loadingIndicator.classList.remove('hidden');
+    this.errorMessage.classList.add('hidden');
 
     try {
-      // Show skeleton loading only for first page
       if (this.currentPage === 1) {
         this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
           <div class="bg-white p-3 rounded shadow skeleton-item">
@@ -741,8 +788,9 @@ class BarangApp {
         \`).join('');
       }
 
-      const response = await this.fetchWithRetry(\`/api/list?page=\${this.currentPage}&limit=\${this.itemsPerPage}&t=\${Date.now()}\`);
-      if (!response.ok) throw new Error('Gagal memuat data');
+      const response = await this.fetchWithRetry(
+        \`/api/list?page=\${this.currentPage}&limit=\${this.itemsPerPage}&t=\${Date.now()}\`
+      );
       
       const { items, hasMore } = await response.json();
       this.hasMoreItems = hasMore;
@@ -752,7 +800,6 @@ class BarangApp {
         return;
       }
 
-      // Clear skeleton loading for first page
       if (this.currentPage === 1) {
         this.katalog.innerHTML = '';
       }
@@ -761,7 +808,6 @@ class BarangApp {
         const itemElement = this.createItemElement(item, index);
         this.katalog.appendChild(itemElement);
         
-        // Pasang observer ke item terakhir
         if (index === items.length - 1) {
           this.observer.observe(itemElement);
         }
@@ -769,7 +815,17 @@ class BarangApp {
 
     } catch (error) {
       console.error('Error:', error);
-      this.showErrorWithRetry('Gagal memuat data: ' + this.escapeHtml(error.message));
+      if (error.message.includes('503')) {
+        this.showError('Server sibuk, silakan coba lagi dalam beberapa saat');
+      } else {
+        this.showError('Gagal memuat data: ' + error.message);
+      }
+      
+      // Reset untuk memungkinkan retry
+      this.hasMoreItems = true;
+      if (this.currentPage > 1) {
+        this.currentPage--;
+      }
     } finally {
       this.isLoading = false;
       this.loadingIndicator.classList.add('hidden');
@@ -785,15 +841,6 @@ class BarangApp {
         this.loadBarang();
       }
     });
-  }
-
-  showErrorWithRetry(message) {
-    this.katalog.innerHTML = \`
-      <div class="text-center py-4 col-span-2">
-        <p class="text-red-500 mb-2">\${message}</p>
-        <button class="retry-btn" onclick="app.resetAndLoad()">Coba Lagi</button>
-      </div>
-    \`;
   }
 
   createItemElement(item, index) {
@@ -844,16 +891,15 @@ class BarangApp {
         throw new Error(result.error || 'Gagal menghapus barang');
       }
       
-      alert('Barang berhasil dihapus');
+      this.showError('Barang berhasil dihapus');
       
-      // Hapus elemen dari DOM tanpa reload semua
       const itemElement = document.querySelector(\`[data-id="\${id}"]\`);
       if (itemElement) {
         itemElement.remove();
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Error: ' + error.message);
+      this.showError('Error: ' + error.message);
     }
   }
 
