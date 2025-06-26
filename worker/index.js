@@ -75,10 +75,33 @@ export default {
       });
     }
 
-    // GET list barang
+    // GET list barang with pagination
     if (path === "/api/list") {
+      const page = parseInt(url.searchParams.get("page")) || 1;
+      const perPage = 10;
+      
       const data = await env.KATALOG.get("items");
-      return new Response(data || "[]", {
+      const items = JSON.parse(data || "[]");
+      
+      // Sort by timestamp descending (newest first)
+      items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      
+      const totalItems = items.length;
+      const totalPages = Math.ceil(totalItems / perPage);
+      const startIndex = (page - 1) * perPage;
+      const endIndex = Math.min(startIndex + perPage, totalItems);
+      
+      const paginatedItems = items.slice(startIndex, endIndex);
+      
+      return new Response(JSON.stringify({
+        items: paginatedItems,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems,
+          perPage
+        }
+      }), {
         headers: { 
           "Content-Type": "application/json",
           "Cache-Control": "no-cache"
@@ -245,6 +268,21 @@ const INDEX_HTML = `<!DOCTYPE html>
       animation: fadeIn 0.3s ease forwards;
       opacity: 0;
     }
+
+    /* Loading spinner */
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #3498db;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -324,6 +362,9 @@ const INDEX_HTML = `<!DOCTYPE html>
 
     <!-- Katalog -->
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
+    <div id="loadingIndicator" class="hidden">
+      <div class="loading-spinner"></div>
+    </div>
   </div>
 
   <script src="script.js"></script>
@@ -334,14 +375,18 @@ const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
     this.isAdmin = false;
-    this.loadingQueue = [];
-    this.currentLoadingIndex = 0;
-    this.loadingBatchSize = 4;
+    this.currentPage = 1;
+    this.totalPages = 1;
+    this.isLoading = false;
+    this.hasMoreItems = true;
     
     this.initElements();
     this.initEventListeners();
     this.checkAdminStatus();
     this.loadBarang();
+    
+    // Setup scroll listener for infinite loading
+    window.addEventListener('scroll', () => this.handleScroll());
   }
 
   initElements() {
@@ -358,6 +403,7 @@ class BarangApp {
     this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
     this.namaInput = document.getElementById('nama');
     this.satuanInput = document.getElementById('satuan');
+    this.loadingIndicator = document.getElementById('loadingIndicator');
   }
 
   initEventListeners() {
@@ -442,6 +488,9 @@ class BarangApp {
         this.isAdmin = true;
         this.toggleAdminUI();
         this.loginModal.classList.add('hidden');
+        // Reset pagination when logging in
+        this.currentPage = 1;
+        this.katalog.innerHTML = '';
         this.loadBarang();
       } else {
         alert('Login gagal! Periksa username dan password');
@@ -457,6 +506,9 @@ class BarangApp {
       await fetch('/api/logout');
       this.isAdmin = false;
       this.toggleAdminUI();
+      // Reset pagination when logging out
+      this.currentPage = 1;
+      this.katalog.innerHTML = '';
       this.loadBarang();
     } catch (error) {
       console.error('Logout error:', error);
@@ -528,6 +580,9 @@ class BarangApp {
       alert('Barang berhasil ditambahkan!');
       this.form.reset();
       this.imagePreviewContainer.classList.add('hidden');
+      // Reset pagination when adding new item
+      this.currentPage = 1;
+      this.katalog.innerHTML = '';
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
@@ -578,49 +633,58 @@ class BarangApp {
   }
 
   async loadBarang() {
+    if (this.isLoading || !this.hasMoreItems) return;
+    
+    this.isLoading = true;
+    this.loadingIndicator.classList.remove('hidden');
+    
     try {
-      this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
-        <div class="bg-white p-3 rounded shadow skeleton-item">
-          <div class="skeleton-image"></div>
-          <div class="skeleton-text medium"></div>
-          <div class="skeleton-text short"></div>
-        </div>
-      \`).join('');
+      // Show skeleton loading for first page
+      if (this.currentPage === 1) {
+        this.katalog.innerHTML = Array.from({ length: 10 }, () => \`
+          <div class="bg-white p-3 rounded shadow skeleton-item">
+            <div class="skeleton-image"></div>
+            <div class="skeleton-text medium"></div>
+            <div class="skeleton-text short"></div>
+          </div>
+        \`).join('');
+      }
 
-      const response = await fetch('/api/list?t=' + Date.now());
+      const response = await fetch(\`/api/list?page=\${this.currentPage}&t=\${Date.now()}\`);
       if (!response.ok) throw new Error('Gagal memuat data');
       
-      const items = await response.json();
+      const { items, pagination } = await response.json();
       
-      if (items.length === 0) {
+      this.totalPages = pagination.totalPages;
+      this.hasMoreItems = this.currentPage < this.totalPages;
+      
+      if (items.length === 0 && this.currentPage === 1) {
         this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
         return;
       }
 
-      this.katalog.innerHTML = '';
-      this.loadingQueue = items;
-      this.currentLoadingIndex = 0;
-      this.processLoadingQueue();
+      // If it's the first page, clear the container
+      if (this.currentPage === 1) {
+        this.katalog.innerHTML = '';
+      }
+
+      // Add items to DOM with animation
+      items.forEach((item, index) => {
+        this.addItemToDOM(item, index);
+      });
+      
+      // Increment page for next load
+      if (items.length > 0) {
+        this.currentPage++;
+      }
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
-    }
-  }
-
-  processLoadingQueue() {
-    const endIndex = Math.min(
-      this.currentLoadingIndex + this.loadingBatchSize,
-      this.loadingQueue.length
-    );
-
-    for (let i = this.currentLoadingIndex; i < endIndex; i++) {
-      this.addItemToDOM(this.loadingQueue[i], i);
-    }
-
-    this.currentLoadingIndex = endIndex;
-
-    if (this.currentLoadingIndex < this.loadingQueue.length) {
-      setTimeout(() => this.processLoadingQueue(), 100);
+      if (this.currentPage === 1) {
+        this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
+      }
+    } finally {
+      this.isLoading = false;
+      this.loadingIndicator.classList.add('hidden');
     }
   }
 
@@ -655,6 +719,17 @@ class BarangApp {
     this.katalog.appendChild(itemElement);
   }
 
+  handleScroll() {
+    // Check if we've scrolled 75% down the page and there are more items to load
+    const scrollPosition = window.innerHeight + window.scrollY;
+    const pageHeight = document.body.offsetHeight;
+    const threshold = pageHeight * 0.75;
+    
+    if (scrollPosition >= threshold && this.hasMoreItems && !this.isLoading) {
+      this.loadBarang();
+    }
+  }
+
   async hapusBarang(id) {
     try {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
@@ -664,6 +739,9 @@ class BarangApp {
       if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
+      // Reset pagination when deleting item
+      this.currentPage = 1;
+      this.katalog.innerHTML = '';
       await this.loadBarang();
     } catch (error) {
       console.error('Error:', error);
