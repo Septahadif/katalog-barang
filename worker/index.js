@@ -76,31 +76,46 @@ export default {
     }
 
     // GET list barang
-    if (path === "/api/list") {
-      try {
-        const response = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/contents/data/item.json', {
-          headers: {
-            'Authorization': `token ${env.GITHUB_TOKEN}`,
-            'User-Agent': 'Cloudflare-Worker'
-          }
-        });
-        
-        if (!response.ok) throw new Error('Gagal mengambil data dari GitHub');
-        
-        const data = await response.json();
-        const content = atob(data.content);
-        return new Response(content, {
-          headers: { 
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache"
-          },
-        });
-      } catch (error) {
-        return new Response(JSON.stringify([]), {
-          headers: { "Content-Type": "application/json" }
-        });
+    // GET list barang
+if (path === "/api/list") {
+  try {
+    const response = await fetch('https://api.github.com/repos/Septahadif/katalog-barang/contents/data/item.json', {
+      headers: {
+        'Authorization': `token ${env.GITHUB_TOKEN}`,
+        'User-Agent': 'Cloudflare-Worker'
       }
+    });
+    
+    if (!response.ok) {
+      // Jika response tidak OK, kembalikan array kosong dengan status 200
+      return new Response(JSON.stringify([]), {
+        headers: { 
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache"
+        }
+      });
     }
+    
+    const data = await response.json();
+    // Pastikan data.content ada sebelum di-decode
+    const content = data.content ? atob(data.content) : "[]";
+    return new Response(content, {
+      headers: { 
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache"
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    return new Response(JSON.stringify([]), {
+      headers: { 
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache"
+      },
+      status: 200
+    });
+  }
+}
 
     // POST tambah barang - Diubah untuk commit ke GitHub
     if (path === "/api/tambah" && req.method === "POST") {
@@ -664,34 +679,53 @@ class BarangApp {
   }
 
   async loadBarang() {
-    try {
-      this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
-        <div class="bg-white p-3 rounded shadow skeleton-item">
-          <div class="skeleton-image"></div>
-          <div class="skeleton-text medium"></div>
-          <div class="skeleton-text short"></div>
-        </div>
-      \`).join('');
+  try {
+    this.katalog.innerHTML = Array.from({ length: 6 }, () => `
+      <div class="bg-white p-3 rounded shadow skeleton-item">
+        <div class="skeleton-image"></div>
+        <div class="skeleton-text medium"></div>
+        <div class="skeleton-text short"></div>
+      </div>
+    `).join('');
 
-      const response = await fetch('/api/list?t=' + Date.now());
-      if (!response.ok) throw new Error('Gagal memuat data');
-      
-      const items = await response.json();
-      
-      if (items.length === 0) {
-        this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
-        return;
-      }
-
-      this.katalog.innerHTML = '';
-      this.loadingQueue = items;
-      this.currentLoadingIndex = 0;
-      this.processLoadingQueue();
-    } catch (error) {
-      console.error('Error:', error);
-      this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
+    const response = await fetch('/api/list?t=' + Date.now());
+    
+    // Periksa jika response kosong
+    if (!response.ok || response.status === 204) {
+      throw new Error('Data kosong atau tidak ditemukan');
     }
+    
+    // Pastikan content-type adalah JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error('Respons tidak valid dari server');
+    }
+
+    const text = await response.text();
+    const items = text ? JSON.parse(text) : [];
+    
+    if (items.length === 0) {
+      this.katalog.innerHTML = '<div class="text-center py-4"><p class="text-gray-500">Belum ada barang.</p></div>';
+      return;
+    }
+
+    this.katalog.innerHTML = '';
+    this.loadingQueue = items;
+    this.currentLoadingIndex = 0;
+    this.processLoadingQueue();
+  } catch (error) {
+    console.error('Error:', error);
+    this.katalog.innerHTML = `
+      <div class="text-center py-4">
+        <p class="text-red-500">Gagal memuat data</p>
+        <p class="text-gray-500 text-sm mt-2">${this.escapeHtml(error.message)}</p>
+        <button onclick="app.loadBarang()" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+          Coba Lagi
+        </button>
+      </div>
+    `;
   }
+}
 
   processLoadingQueue() {
     const endIndex = Math.min(
