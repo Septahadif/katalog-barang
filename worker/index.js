@@ -73,6 +73,21 @@ async function deleteItemById(env, id) {
   }
 }
 
+async function tulisLog(env, isi, level = "info") {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    waktu: timestamp,
+    level,
+    isi: typeof isi === "string" ? isi : JSON.stringify(isi)
+  };
+  const key = `log:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    await env.LOGS.put(key, JSON.stringify(logEntry));
+  } catch (err) {
+    console.error("Gagal menulis log:", err);
+  }
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
@@ -245,19 +260,18 @@ export default {
 
     if (path === "/api/tambah" && req.method === "POST") {
   try {
-    // Validasi token admin
     const cookieHeader = req.headers.get("Cookie") || "";
     const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
     const token = cookies.get("admin");
     const validToken = await env.KATALOG.get("admin_token");
 
     if (token !== validToken) {
+      await tulisLog(env, "Tambah ditolak: unauthorized", "warn");
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
 
     const body = await req.json();
 
-    // Validasi data
     if (!body.nama || typeof body.nama !== "string" || body.nama.trim().length === 0) {
       return new Response(JSON.stringify({ error: "Nama barang harus diisi" }), { status: 400 });
     }
@@ -280,10 +294,10 @@ export default {
       harga: Number(body.harga)
     };
 
-    // Simpan item dengan pengecekan ukuran namespace
     const namespaceUsed = await saveItemSmart(env, item);
 
-    // Invalidate cache
+    await tulisLog(env, `Barang ditambah: ${item.nama} (${item.id}) ke ${namespaceUsed}`, "info");
+
     ctx.waitUntil(caches.default.delete("/api/list"));
 
     return new Response(JSON.stringify({
@@ -295,6 +309,7 @@ export default {
     });
 
   } catch (error) {
+    await tulisLog(env, `Gagal menambah barang: ${error.message}`, "error");
     console.error("Error adding item:", error);
     return new Response(JSON.stringify({
       error: "Failed to add item",
@@ -304,40 +319,88 @@ export default {
 }
 
     if (path === "/api/hapus" && req.method === "POST") {
-      try {
-        const cookieHeader = req.headers.get("Cookie") || "";
-        const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
-        const token = cookies.get("admin");
-        const validToken = await env.KATALOG.get("admin_token");
+  try {
+    const cookieHeader = req.headers.get("Cookie") || "";
+    const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+    const token = cookies.get("admin");
+    const validToken = await env.KATALOG.get("admin_token");
 
-        if (token !== validToken) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
-        }
-
-        const { id } = await req.json();
-        if (!id) return new Response("Missing ID", { status: 400 });
-
-        const found = await deleteItemById(env, id);
-        if (!found) {
-          return new Response(JSON.stringify({ error: "ID not found" }), { status: 404 });
-        }
-
-        ctx.waitUntil(Promise.all([
-          caches.default.delete("/api/list"),
-          caches.default.delete(new Request(new URL("/api/image/" + id, req.url).toString()))
-        ]));
-
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (error) {
-        console.error("Error deleting item:", error);
-        return new Response(JSON.stringify({
-          error: "Failed to delete item",
-          details: error.message
-        }), { status: 500 });
-      }
+    if (token !== validToken) {
+      await tulisLog(env, "Hapus ditolak: unauthorized", "warn");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
+
+    const { id } = await req.json();
+    if (!id) return new Response("Missing ID", { status: 400 });
+
+    const found = await deleteItemById(env, id);
+    if (!found) {
+      await tulisLog(env, `Gagal hapus: ID ${id} tidak ditemukan`, "warn");
+      return new Response(JSON.stringify({ error: "ID not found" }), { status: 404 });
+    }
+
+    await tulisLog(env, `Barang dihapus: ${id}`, "info");
+
+    ctx.waitUntil(Promise.all([
+      caches.default.delete("/api/list"),
+      caches.default.delete(new Request(new URL("/api/image/" + id, req.url).toString()))
+    ]));
+
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    await tulisLog(env, `Gagal menghapus barang: ${error.message}`, "error");
+    console.error("Error deleting item:", error);
+    return new Response(JSON.stringify({
+      error: "Failed to delete item",
+      details: error.message
+    }), { status: 500 });
+  }
+}
+
+if (path === "/api/logs") {
+  const list = await env.LOGS.list({ prefix: "log:", limit: 100, reverse: true });
+  const logs = await Promise.all(list.keys.map(async key => {
+    const val = await env.LOGS.get(key.name);
+    return JSON.parse(val || "{}");
+  }));
+
+  return new Response(JSON.stringify(logs, null, 2), {
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+if (path === "/api/logs-clear") {
+  try {
+    // Cek admin token dari cookie
+    const cookieHeader = req.headers.get("Cookie") || "";
+    const cookies = new Map(cookieHeader.split(';').map(c => c.trim().split('=')));
+    const token = cookies.get("admin");
+    const validToken = await env.KATALOG.get("admin_token");
+
+    if (token !== validToken) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    // Ambil semua log key
+    const list = await env.LOGS.list({ prefix: "log:" });
+
+    // Hapus semuanya
+    await Promise.all(list.keys.map(key => env.LOGS.delete(key.name)));
+
+    await tulisLog(env, `Admin menghapus semua log`, "warn");
+
+    return new Response(`✅ ${list.keys.length} log berhasil dihapus.`, {
+      headers: { "Content-Type": "text/plain" }
+    });
+  } catch (err) {
+    console.error("Gagal menghapus log:", err);
+    return new Response("❌ Gagal hapus log: " + err.message, { status: 500 });
+  }
+}
+
+
 
     return new Response("404 Not Found", { status: 404 });
   }
