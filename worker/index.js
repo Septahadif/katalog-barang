@@ -3,36 +3,55 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    // Serve HTML
+    // Serve static assets
     if (path === "/" || path === "/index.html") {
       return new Response(INDEX_HTML, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: { 
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "public, max-age=3600" 
+        },
       });
     }
 
-    // Serve JS
     if (path === "/script.js") {
       return new Response(SCRIPT_JS, {
-        headers: { "Content-Type": "application/javascript; charset=utf-8" },
+        headers: { 
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "public, max-age=3600" 
+        },
       });
     }
 
-    // Serve Image
+    // Image endpoint with cache and retry
     if (path.startsWith("/api/image/")) {
       const id = path.split('/')[3];
       if (!id) return new Response("Missing ID", { status: 400 });
 
+      // Check cache first
+      const cacheKey = new Request(url.toString());
+      const cached = await caches.default.match(cacheKey);
+      if (cached) return cached;
+
       try {
-        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Image load timeout")), 5000)
+        );
+
+        const itemsPromise = env.KATALOG.get("items", { 
+          type: "json", 
+          cacheTtl: 3600 
+        });
+
+        const items = await Promise.race([itemsPromise, timeoutPromise]);
         const item = items.find(item => item.id === id);
         
         if (!item || !item.base64) {
           return new Response("Image not found", { status: 404 });
         }
 
-        // Validasi base64
-        const base64Regex = /^data:image\/([a-zA-Z]*);base64,([^\"]*)$/;
+        // Process image
         let base64Data = item.base64;
+        const base64Regex = /^data:image\/([a-zA-Z]*);base64,([^\"]*)$/;
         
         if (base64Regex.test(item.base64)) {
           base64Data = item.base64.split(',')[1];
@@ -43,15 +62,22 @@ export default {
         }
 
         const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-        
-        return new Response(imageBuffer, {
+        const response = new Response(imageBuffer, {
           headers: { 
             "Content-Type": "image/jpeg",
-            "Cache-Control": "public, max-age=31536000"
+            "Cache-Control": "public, max-age=31536000, immutable"
           }
         });
+
+        // Store in cache
+        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+        return response;
       } catch (error) {
-        return new Response("Error loading image", { status: 500 });
+        console.error("Image load error:", error);
+        return new Response("Error loading image", { 
+          status: 500,
+          headers: { "Retry-After": "2" }
+        });
       }
     }
 
@@ -108,32 +134,31 @@ export default {
       });
     }
 
-    // GET list barang dengan pagination
+    // GET list barang dengan pagination dan cache
     if (path === "/api/list") {
       try {
-        const kvPromise = env.KATALOG.get("items");
+        const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10));
+        
+        // Check cache
+        const cacheKey = new Request(url.toString());
+        const cached = await caches.default.match(cacheKey);
+        if (cached) return cached;
+
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error("KV timeout")), 3000)
         );
         
-        const data = await Promise.race([kvPromise, timeoutPromise]);
+        const itemsPromise = env.KATALOG.get("items", { type: "json", cacheTtl: 60 });
+        const data = await Promise.race([itemsPromise, timeoutPromise]);
         
-        let items = [];
-        try {
-          items = JSON.parse(data || "[]");
-        } catch (e) {
-          console.error("Error parsing items:", e);
-          items = [];
-        }
-        
+        let items = Array.isArray(data) ? data : [];
         items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         
-        const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-        const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10));
         const startIndex = (page - 1) * limit;
         const endIndex = Math.min(startIndex + limit, items.length);
         
-        return new Response(JSON.stringify({
+        const response = new Response(JSON.stringify({
           items: items.slice(startIndex, endIndex),
           total: items.length,
           page,
@@ -142,9 +167,13 @@ export default {
         }), {
           headers: { 
             "Content-Type": "application/json; charset=utf-8",
-            "Cache-Control": "no-cache"
+            "Cache-Control": "public, max-age=60"
           }
         });
+
+        // Store in cache
+        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+        return response;
       } catch (error) {
         console.error("Error in /api/list:", error);
         return new Response(JSON.stringify({
@@ -201,6 +230,10 @@ export default {
         items.push(item);
 
         await env.KATALOG.put("items", JSON.stringify(items));
+        
+        // Invalidate cache
+        ctx.waitUntil(caches.default.delete("/api/list"));
+        
         return new Response(JSON.stringify({ success: true, id: item.id }), {
           headers: { "Content-Type": "application/json" },
         });
@@ -231,6 +264,12 @@ export default {
         const items = JSON.parse(await env.KATALOG.get("items") || "[]");
         const updated = items.filter(item => item.id !== id);
         await env.KATALOG.put("items", JSON.stringify(updated));
+        
+        // Invalidate cache
+        ctx.waitUntil(Promise.all([
+          caches.default.delete("/api/list"),
+          caches.default.delete(new Request(new URL("/api/image/" + id, req.url).toString()))
+        ]));
 
         return new Response(JSON.stringify({ success: true }), {
           headers: { "Content-Type": "application/json" },
@@ -378,6 +417,13 @@ const INDEX_HTML = `<!DOCTYPE html>
       border-radius: 0.375rem;
       margin: 1rem 0;
     }
+    .image-retry {
+      transition: all 0.3s ease;
+    }
+    .image-retry.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -474,6 +520,7 @@ class BarangApp {
     this.baseDelay = 1000;
     this.abortController = null;
     this.scrollDebounce = null;
+    this.imageLoadTimeouts = new Map();
     
     this.observer = new IntersectionObserver(
       (entries) => this.handleScroll(entries),
@@ -525,6 +572,8 @@ class BarangApp {
     if (this.scrollDebounce) {
       clearTimeout(this.scrollDebounce);
     }
+    this.imageLoadTimeouts.forEach(timeout => clearTimeout(timeout));
+    this.imageLoadTimeouts.clear();
   }
 
   autoCapitalize(event, force = false) {
@@ -668,6 +717,12 @@ class BarangApp {
       return;
     }
 
+    if (file.size > 2 * 1024 * 1024) { // 2MB max
+      this.showError('Ukuran gambar terlalu besar. Maksimal 2MB.');
+      this.fileInput.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       this.imagePreview.src = event.target.result;
@@ -751,7 +806,7 @@ class BarangApp {
 
   addNewItemToView(item) {
     const itemElement = this.createItemElement(item, 0);
-    this.katalog.appendChild(itemElement);
+    this.katalog.prepend(itemElement);
     itemElement.scrollIntoView({ behavior: 'smooth' });
   }
 
@@ -766,15 +821,31 @@ class BarangApp {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          const size = Math.min(img.width, img.height);
-          canvas.width = size;
-          canvas.height = size;
+          // Resize to max 800px while maintaining aspect ratio
+          const maxSize = 800;
+          let width = img.width;
+          let height = img.height;
           
-          const offsetX = (img.width - size) / 2;
-          const offsetY = (img.height - size) / 2;
-          ctx.drawImage(img, offsetX, offsetY, size, size, 0, 0, size, size);
+          if (width > height) {
+            if (width > maxSize) {
+              height *= maxSize / width;
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width *= maxSize / height;
+              height = maxSize;
+            }
+          }
           
-          const base64 = canvas.toDataURL('image/jpeg', 0.85);
+          canvas.width = width;
+          canvas.height = height;
+          
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Convert to WebP for smaller size (fallback to jpeg)
+          const base64 = canvas.toDataURL('image/webp', 0.85) || 
+                         canvas.toDataURL('image/jpeg', 0.85);
           resolve(base64);
         };
         
@@ -827,7 +898,7 @@ class BarangApp {
         throw new Error(error.message || \`HTTP error! status: \${response.status}\`);
       }
 
-      const { items, hasMore } = await response.json();
+      const { items, total, page, limit, hasMore } = await response.json();
       this.hasMoreItems = hasMore;
       
       if (items.length === 0 && this.currentPage === 1) {
@@ -898,15 +969,18 @@ class BarangApp {
     itemElement.setAttribute('data-id', escapedId);
     
     itemElement.innerHTML = \`
-      <div class="image-container">
+      <div class="image-container relative">
         <img 
           src="/api/image/\${escapedId}?t=\${item.timestamp || Date.now()}" 
           alt="\${escapedNama}" 
           class="loading" 
           loading="lazy"
-          onload="this.classList.remove('loading'); this.classList.add('loaded')"
-          onerror="this.onerror=null;this.src='/api/image/\${escapedId}?t='+Date.now()"
+          onload="this.classList.remove('loading'); this.classList.add('loaded'); window.app.clearImageTimeout(this)"
+          onerror="window.app.handleImageError(this)"
         >
+        <div class="image-retry hidden absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <button class="retry-btn" onclick="window.app.retryLoadImage(this)">Muat Ulang</button>
+        </div>
       </div>
       <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
       <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
@@ -915,7 +989,60 @@ class BarangApp {
         : ''}
     \`;
     
+    // Set timeout untuk gambar
+    const img = itemElement.querySelector('img');
+    this.setImageTimeout(img);
+    
     return itemElement;
+  }
+
+  setImageTimeout(img) {
+    const timeoutId = setTimeout(() => {
+      if (img && img.classList.contains('loading')) {
+        img.dispatchEvent(new Event('error'));
+      }
+    }, 8000); // Timeout 8 detik
+    
+    this.imageLoadTimeouts.set(img, timeoutId);
+  }
+
+  clearImageTimeout(img) {
+    if (this.imageLoadTimeouts.has(img)) {
+      clearTimeout(this.imageLoadTimeouts.get(img));
+      this.imageLoadTimeouts.delete(img);
+    }
+  }
+
+  handleImageError(imgElement) {
+    this.clearImageTimeout(imgElement);
+    const container = imgElement.parentElement;
+    const retryOverlay = container.querySelector('.image-retry');
+    if (retryOverlay) {
+      retryOverlay.classList.remove('hidden');
+      
+      // Coba muat ulang otomatis setelah 3 detik
+      setTimeout(() => {
+        if (retryOverlay && !retryOverlay.classList.contains('hidden')) {
+          this.retryLoadImage(retryOverlay.querySelector('.retry-btn'));
+        }
+      }, 3000);
+    }
+  }
+
+  retryLoadImage(button) {
+    const overlay = button.parentElement;
+    overlay.classList.add('hidden');
+    const img = overlay.previousElementSibling;
+    
+    if (!img) return;
+    
+    // Tambahkan timestamp baru untuk bypass cache
+    const newSrc = img.src.includes('?') ? 
+      \`\${img.src.split('?')[0]}?t=\${Date.now()}\` : 
+      \`\${img.src}?t=\${Date.now()}\`;
+    
+    img.src = newSrc;
+    this.setImageTimeout(img);
   }
 
   async hapusBarang(id) {
