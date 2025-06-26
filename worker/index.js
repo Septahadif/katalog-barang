@@ -22,47 +22,61 @@ export default {
       const id = path.split('/')[3];
       if (!id) return new Response("Missing ID", { status: 400 });
 
-      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-      const item = items.find(item => item.id === id);
-      
-      if (!item || !item.base64) {
-        return new Response("Image not found", { status: 404 });
-      }
-
-      // Extract image data from base64
-      const base64Data = item.base64.split(',')[1] || item.base64;
-      const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-      
-      return new Response(imageBuffer, {
-        headers: { 
-          "Content-Type": "image/jpeg",
-          "Cache-Control": "public, max-age=31536000" // Cache for 1 year
+      try {
+        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+        const item = items.find(item => item.id === id);
+        
+        if (!item || !item.base64) {
+          return new Response("Image not found", { status: 404 });
         }
-      });
+
+        // Extract image data from base64
+        const base64Data = item.base64.split(',')[1] || item.base64;
+        const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        
+        return new Response(imageBuffer, {
+          headers: { 
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "public, max-age=31536000" // Cache for 1 year
+          }
+        });
+      } catch (error) {
+        return new Response("Error loading image", { status: 500 });
+      }
     }
 
     // Login Admin
     if (path === "/api/login" && req.method === "POST") {
-      const { username, password } = await req.json();
-      const isAdmin = username === "septa" && password === "septa2n2n";
-      
-      if (isAdmin) {
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { 
-            "Content-Type": "application/json",
-            "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
-          }
-        });
+      try {
+        const { username, password } = await req.json();
+        const isAdmin = username === "septa" && password === "septa2n2n";
+        
+        if (isAdmin) {
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { 
+              "Content-Type": "application/json",
+              "Set-Cookie": "admin=true; HttpOnly; Secure; SameSite=Strict"
+            }
+          });
+        }
+        return new Response(JSON.stringify({ success: false }), { status: 401 });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Invalid request" }), { status: 400 });
       }
-      return new Response(JSON.stringify({ success: false }), { status: 401 });
     }
 
     // Check Admin Status
     if (path === "/api/check-admin") {
-      const cookie = req.headers.get("Cookie") || "";
-      return new Response(JSON.stringify({ isAdmin: cookie.includes("admin=true") }), {
-        headers: { "Content-Type": "application/json" }
-      });
+      try {
+        const cookie = req.headers.get("Cookie") || "";
+        return new Response(JSON.stringify({ isAdmin: cookie.includes("admin=true") }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ isAdmin: false }), {
+          headers: { "Content-Type": "application/json" }
+        };
+      }
     }
 
     // Logout
@@ -77,55 +91,72 @@ export default {
 
     // GET list barang
     if (path === "/api/list") {
-      const data = await env.KATALOG.get("items");
-      return new Response(data || "[]", {
-        headers: { 
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache"
-        },
-      });
+      try {
+        const data = await env.KATALOG.get("items");
+        return new Response(data || "[]", {
+          headers: { 
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache"
+          },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify([]), {
+          headers: { 
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache"
+          },
+        });
+      }
     }
 
     // POST tambah barang (hanya admin)
     if (path === "/api/tambah" && req.method === "POST") {
-      const cookie = req.headers.get("Cookie") || "";
-      if (!cookie.includes("admin=true")) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      try {
+        const cookie = req.headers.get("Cookie") || "";
+        if (!cookie.includes("admin=true")) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+        }
+
+        const body = await req.json();
+        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+
+        const item = { 
+          ...body, 
+          id: Date.now().toString(),
+          timestamp: Date.now()
+        };
+        items.push(item);
+
+        await env.KATALOG.put("items", JSON.stringify(items));
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Failed to add item" }), { status: 500 });
       }
-
-      const body = await req.json();
-      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-
-      const item = { 
-        ...body, 
-        id: Date.now().toString(),
-        timestamp: Date.now()
-      };
-      items.push(item);
-
-      await env.KATALOG.put("items", JSON.stringify(items));
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
     // POST hapus barang (hanya admin)
     if (path === "/api/hapus" && req.method === "POST") {
-      const cookie = req.headers.get("Cookie") || "";
-      if (!cookie.includes("admin=true")) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+      try {
+        const cookie = req.headers.get("Cookie") || "";
+        if (!cookie.includes("admin=true")) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+        }
+
+        const id = url.searchParams.get("id");
+        if (!id) return new Response("Missing ID", { status: 400 });
+
+        const items = JSON.parse(await env.KATALOG.get("items") || "[]");
+        const updated = items.filter(item => item.id !== id);
+        await env.KATALOG.put("items", JSON.stringify(updated));
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Failed to delete item" }), { status: 500 });
       }
-
-      const id = url.searchParams.get("id");
-      if (!id) return new Response("Missing ID", { status: 400 });
-
-      const items = JSON.parse(await env.KATALOG.get("items") || "[]");
-      const updated = items.filter(item => item.id !== id);
-      await env.KATALOG.put("items", JSON.stringify(updated));
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
     return new Response("404 Not Found", { status: 404 });
@@ -245,6 +276,21 @@ const INDEX_HTML = `<!DOCTYPE html>
       animation: fadeIn 0.3s ease forwards;
       opacity: 0;
     }
+    
+    /* Error and retry button */
+    .retry-btn {
+      background-color: #3b82f6;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+      cursor: pointer;
+      border: none;
+    }
+    .retry-btn:hover {
+      background-color: #2563eb;
+    }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
@@ -337,6 +383,8 @@ class BarangApp {
     this.loadingQueue = [];
     this.currentLoadingIndex = 0;
     this.loadingBatchSize = 4;
+    this.maxRetries = 3;
+    this.retryDelay = 1000; // 1 second
     
     this.initElements();
     this.initEventListeners();
@@ -406,12 +454,14 @@ class BarangApp {
 
   async checkAdminStatus() {
     try {
-      const response = await fetch('/api/check-admin');
+      const response = await this.fetchWithRetry('/api/check-admin');
       const { isAdmin } = await response.json();
       this.isAdmin = isAdmin;
       this.toggleAdminUI();
     } catch (error) {
       console.error('Error checking admin status:', error);
+      this.isAdmin = false;
+      this.toggleAdminUI();
     }
   }
 
@@ -426,13 +476,25 @@ class BarangApp {
     }
   }
 
+  async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
+    try {
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return response;
+    } catch (error) {
+      if (retries <= 0) throw error;
+      await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+      return this.fetchWithRetry(url, options, retries - 1);
+    }
+  }
+
   async handleLogin(e) {
     e.preventDefault();
     const username = document.getElementById('loginUsername').value;
     const password = document.getElementById('loginPassword').value;
     
     try {
-      const response = await fetch('/api/login', {
+      const response = await this.fetchWithRetry('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -448,18 +510,19 @@ class BarangApp {
       }
     } catch (error) {
       console.error('Login error:', error);
-      alert('Terjadi kesalahan saat login');
+      alert('Terjadi kesalahan saat login. Silakan coba lagi.');
     }
   }
 
   async handleLogout() {
     try {
-      await fetch('/api/logout');
+      await this.fetchWithRetry('/api/logout');
       this.isAdmin = false;
       this.toggleAdminUI();
       this.loadBarang();
     } catch (error) {
       console.error('Logout error:', error);
+      alert('Terjadi kesalahan saat logout. Silakan coba lagi.');
     }
   }
 
@@ -510,7 +573,7 @@ class BarangApp {
       // Create a square version of the image
       const base64 = await this.createSquareImage(formData.gambar);
 
-      const response = await fetch('/api/tambah', {
+      const response = await this.fetchWithRetry('/api/tambah', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -587,7 +650,7 @@ class BarangApp {
         </div>
       \`).join('');
 
-      const response = await fetch('/api/list?t=' + Date.now());
+      const response = await this.fetchWithRetry('/api/list?t=' + Date.now());
       if (!response.ok) throw new Error('Gagal memuat data');
       
       const items = await response.json();
@@ -603,8 +666,17 @@ class BarangApp {
       this.processLoadingQueue();
     } catch (error) {
       console.error('Error:', error);
-      this.katalog.innerHTML = \`<div class="text-center py-4 text-red-500"><p>Gagal memuat data: \${this.escapeHtml(error.message)}</p></div>\`;
+      this.showErrorWithRetry('Gagal memuat data: ' + this.escapeHtml(error.message));
     }
+  }
+
+  showErrorWithRetry(message) {
+    this.katalog.innerHTML = \`
+      <div class="text-center py-4 col-span-2">
+        <p class="text-red-500 mb-2">\${message}</p>
+        <button class="retry-btn" onclick="app.loadBarang()">Coba Lagi</button>
+      </div>
+    \`;
   }
 
   processLoadingQueue() {
@@ -643,6 +715,7 @@ class BarangApp {
           class="loading" 
           loading="lazy"
           onload="this.classList.remove('loading'); this.classList.add('loaded')"
+          onerror="this.onerror=null;this.src='/api/image/\${escapedId}?t='+Date.now()"
         >
       </div>
       <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
@@ -660,7 +733,7 @@ class BarangApp {
       const konfirmasi = confirm('Yakin ingin menghapus barang ini?');
       if (!konfirmasi) return;
 
-      const response = await fetch('/api/hapus?id=' + id, { method: 'POST' });
+      const response = await this.fetchWithRetry('/api/hapus?id=' + id, { method: 'POST' });
       if (!response.ok) throw new Error('Gagal menghapus barang');
       
       alert('Barang berhasil dihapus');
