@@ -136,10 +136,11 @@ export default {
 
     // GET list barang dengan pagination dan cache - FIXED
     // GET list barang dengan pagination dan cache - FIXED
+// GET list barang dengan pagination dan cache - FIXED
 if (path === "/api/list") {
   try {
     const page = Math.max(1, parseInt(url.searchParams.get("page")) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10);
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit")) || 10));
     
     // Check cache
     const cacheKey = new Request(url.toString());
