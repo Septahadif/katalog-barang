@@ -37,7 +37,7 @@ export default {
         return new Response(imageBuffer, {
           headers: { 
             "Content-Type": "image/jpeg",
-            "Cache-Control": "public, max-age=31536000" // Cache for 1 year
+            "Cache-Control": "public, max-age=31536000"
           }
         });
       } catch (error) {
@@ -75,7 +75,7 @@ export default {
       } catch (error) {
         return new Response(JSON.stringify({ isAdmin: false }), {
           headers: { "Content-Type": "application/json" }
-        })
+        });
       }
     }
 
@@ -89,18 +89,18 @@ export default {
       });
     }
 
-    // GET list barang with pagination
+    // GET list barang dengan pagination
     if (path === "/api/list") {
       try {
         const data = await env.KATALOG.get("items");
-        const items = JSON.parse(data || "[]");
+        let items = JSON.parse(data || "[]");
         
-        // Sort by newest first
-        items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        // Urutkan dari yang terlama ke terbaru (yang lama di atas, baru di bawah)
+        items.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         
-        // Get pagination parameters
+        // Pagination
         const page = parseInt(url.searchParams.get("page")) || 1;
-        const limit = parseInt(url.searchParams.get("limit")) || 5;
+        const limit = parseInt(url.searchParams.get("limit")) || 10;
         const startIndex = (page - 1) * limit;
         const endIndex = startIndex + limit;
         
@@ -116,25 +116,27 @@ export default {
           headers: { 
             "Content-Type": "application/json",
             "Cache-Control": "no-cache"
-          },
+          }
         });
       } catch (error) {
+        console.error("Error fetching items:", error);
         return new Response(JSON.stringify({
           items: [],
           total: 0,
           page: 1,
-          limit: 5,
+          limit: 10,
           hasMore: false
         }), {
           headers: { 
             "Content-Type": "application/json",
             "Cache-Control": "no-cache"
           },
+          status: 500
         });
       }
     }
 
-    // POST tambah barang (hanya admin)
+    // POST tambah barang
     if (path === "/api/tambah" && req.method === "POST") {
       try {
         const cookie = req.headers.get("Cookie") || "";
@@ -162,11 +164,14 @@ export default {
         });
       } catch (error) {
         console.error("Error adding item:", error);
-        return new Response(JSON.stringify({ error: "Failed to add item", details: error.message }), { status: 500 });
+        return new Response(JSON.stringify({ 
+          error: "Failed to add item", 
+          details: error.message 
+        }), { status: 500 });
       }
     }
 
-    // POST hapus barang (hanya admin)
+    // POST hapus barang
     if (path === "/api/hapus" && req.method === "POST") {
       try {
         const cookie = req.headers.get("Cookie") || "";
@@ -186,7 +191,10 @@ export default {
         });
       } catch (error) {
         console.error("Error deleting item:", error);
-        return new Response(JSON.stringify({ error: "Failed to delete item", details: error.message }), { status: 500 });
+        return new Response(JSON.stringify({ 
+          error: "Failed to delete item",
+          details: error.message 
+        }), { status: 500 });
       }
     }
 
@@ -323,24 +331,11 @@ const INDEX_HTML = `<!DOCTYPE html>
       background-color: #2563eb;
     }
 
-    /* Load more button */
-    .load-more-btn {
-      background-color: #10b981;
-      color: white;
-      padding: 0.75rem 1.5rem;
-      border-radius: 0.375rem;
-      font-size: 1rem;
-      margin: 1rem auto;
-      cursor: pointer;
-      border: none;
-      display: block;
-    }
-    .load-more-btn:hover {
-      background-color: #059669;
-    }
-    .load-more-btn:disabled {
-      background-color: #d1d5db;
-      cursor: not-allowed;
+    /* Loading indicator */
+    .loading-indicator {
+      text-align: center;
+      padding: 1rem;
+      color: #6b7280;
     }
   </style>
 </head>
@@ -421,7 +416,7 @@ const INDEX_HTML = `<!DOCTYPE html>
 
     <!-- Katalog -->
     <div id="katalog" class="grid gap-4 grid-cols-1 sm:grid-cols-2"></div>
-    <button id="loadMoreBtn" class="load-more-btn hidden">Muat Lebih Banyak</button>
+    <div id="loadingIndicator" class="loading-indicator hidden">Memuat...</div>
   </div>
 
   <script src="script.js"></script>
@@ -433,12 +428,18 @@ class BarangApp {
   constructor() {
     this.isAdmin = false;
     this.currentPage = 1;
-    this.itemsPerPage = 5;
+    this.itemsPerPage = 10;  // 10 item per load
     this.hasMoreItems = true;
     this.isLoading = false;
     this.maxRetries = 3;
     this.retryDelay = 1000;
     
+    // Untuk infinite scroll
+    this.observer = new IntersectionObserver(
+      (entries) => this.handleScroll(entries),
+      { threshold: 0.1 }
+    );
+
     this.initElements();
     this.initEventListeners();
     this.checkAdminStatus();
@@ -459,7 +460,7 @@ class BarangApp {
     this.imagePreviewContainer = document.getElementById('imagePreviewContainer');
     this.namaInput = document.getElementById('nama');
     this.satuanInput = document.getElementById('satuan');
-    this.loadMoreBtn = document.getElementById('loadMoreBtn');
+    this.loadingIndicator = document.getElementById('loadingIndicator');
   }
 
   initEventListeners() {
@@ -473,7 +474,6 @@ class BarangApp {
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
     this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
-    this.loadMoreBtn.addEventListener('click', () => this.loadMore());
   }
 
   autoCapitalize(event, force = false) {
@@ -654,7 +654,17 @@ class BarangApp {
       alert('Barang berhasil ditambahkan!');
       this.form.reset();
       this.imagePreviewContainer.classList.add('hidden');
-      this.resetAndLoad();
+      
+      // Tambahkan item baru ke tampilan tanpa reload semua
+      this.addNewItemToView({
+        ...result,
+        id: result.id,
+        nama: formData.nama,
+        harga: formData.harga,
+        satuan: formData.satuan,
+        base64,
+        timestamp: Date.now()
+      });
     } catch (error) {
       console.error('Error:', error);
       alert('Error: ' + error.message);
@@ -662,6 +672,17 @@ class BarangApp {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Tambah Barang';
     }
+  }
+
+  addNewItemToView(item) {
+    // Buat elemen baru untuk item yang ditambahkan
+    const itemElement = this.createItemElement(item, 0);
+    
+    // Tambahkan ke akhir daftar
+    this.katalog.appendChild(itemElement);
+    
+    // Scroll ke item baru
+    itemElement.scrollIntoView({ behavior: 'smooth' });
   }
 
   createSquareImage(file) {
@@ -706,6 +727,7 @@ class BarangApp {
   async loadBarang() {
     if (this.isLoading || !this.hasMoreItems) return;
     this.isLoading = true;
+    this.loadingIndicator.classList.remove('hidden');
 
     try {
       // Show skeleton loading only for first page
@@ -722,12 +744,11 @@ class BarangApp {
       const response = await this.fetchWithRetry(\`/api/list?page=\${this.currentPage}&limit=\${this.itemsPerPage}&t=\${Date.now()}\`);
       if (!response.ok) throw new Error('Gagal memuat data');
       
-      const { items, total, page, limit, hasMore } = await response.json();
+      const { items, hasMore } = await response.json();
       this.hasMoreItems = hasMore;
       
       if (items.length === 0 && this.currentPage === 1) {
         this.katalog.innerHTML = '<div class="text-center py-4 col-span-2"><p class="text-gray-500">Belum ada barang.</p></div>';
-        this.loadMoreBtn.classList.add('hidden');
         return;
       }
 
@@ -737,34 +758,33 @@ class BarangApp {
       }
 
       items.forEach((item, index) => {
-        this.addItemToDOM(item, (this.currentPage - 1) * this.itemsPerPage + index);
+        const itemElement = this.createItemElement(item, index);
+        this.katalog.appendChild(itemElement);
+        
+        // Pasang observer ke item terakhir
+        if (index === items.length - 1) {
+          this.observer.observe(itemElement);
+        }
       });
 
-      // Show/hide load more button
-      if (this.hasMoreItems) {
-        this.loadMoreBtn.classList.remove('hidden');
-      } else {
-        this.loadMoreBtn.classList.add('hidden');
-      }
     } catch (error) {
       console.error('Error:', error);
       this.showErrorWithRetry('Gagal memuat data: ' + this.escapeHtml(error.message));
     } finally {
       this.isLoading = false;
+      this.loadingIndicator.classList.add('hidden');
     }
   }
 
-  async loadMore() {
-    if (this.isLoading) return;
+  handleScroll(entries) {
+    if (this.isLoading || !this.hasMoreItems) return;
     
-    this.currentPage++;
-    this.loadMoreBtn.disabled = true;
-    this.loadMoreBtn.textContent = 'Memuat...';
-    
-    await this.loadBarang();
-    
-    this.loadMoreBtn.disabled = false;
-    this.loadMoreBtn.textContent = 'Muat Lebih Banyak';
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        this.currentPage++;
+        this.loadBarang();
+      }
+    });
   }
 
   showErrorWithRetry(message) {
@@ -774,10 +794,9 @@ class BarangApp {
         <button class="retry-btn" onclick="app.resetAndLoad()">Coba Lagi</button>
       </div>
     \`;
-    this.loadMoreBtn.classList.add('hidden');
   }
 
-  addItemToDOM(item, index) {
+  createItemElement(item, index) {
     const escapedId = this.escapeHtml(item.id);
     const escapedNama = this.escapeHtml(item.nama);
     const escapedSatuan = this.escapeHtml(item.satuan);
@@ -806,7 +825,7 @@ class BarangApp {
         : ''}
     \`;
     
-    this.katalog.appendChild(itemElement);
+    return itemElement;
   }
 
   async hapusBarang(id) {
@@ -826,7 +845,12 @@ class BarangApp {
       }
       
       alert('Barang berhasil dihapus');
-      this.resetAndLoad();
+      
+      // Hapus elemen dari DOM tanpa reload semua
+      const itemElement = document.querySelector(\`[data-id="\${id}"]\`);
+      if (itemElement) {
+        itemElement.remove();
+      }
     } catch (error) {
       console.error('Error:', error);
       alert('Error: ' + error.message);
