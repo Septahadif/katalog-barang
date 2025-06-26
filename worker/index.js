@@ -805,7 +805,7 @@ class BarangApp {
   
   showMessage(message, type = 'info') {
   const messageElement = document.createElement('div');
-  messageElement.className = `${type}-message`;
+  messageElement.className = type + '-message';
   messageElement.textContent = message;
   
   // Tambahkan pesan sebelum form
