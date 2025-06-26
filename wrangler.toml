@@ -5,11 +5,15 @@ main = "worker/index.js"
 
 kv_namespaces = [
   { binding = "KATALOG", id = "552f4d9d18164051a77ad2e4ba52a43c" },
-  { binding = "AUTH_STORE", id = "3b68a7b6d04444bc9cdbced5926a62d7" }
+  { binding = "KATALOG_2", id = "f968802342c74f1fa9c599b729664f24" }
 ]
 # wrangler.toml (wrangler v3.88.0^)
 [observability.logs]
 enabled = true
+
+[vars]
+ADMIN_USERNAME = "septa"
+ADMIN_PASSWORD = "septa2n2n"
 
 
 
