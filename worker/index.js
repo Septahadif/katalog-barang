@@ -479,7 +479,7 @@ class BarangApp {
   async fetchWithRetry(url, options = {}, retries = this.maxRetries) {
     try {
       const response = await fetch(url, options);
-      if (!response.ok) throw new Error("HTTP error! status: ${response.status}");
+      if (!response?.ok) throw new Error(`HTTP error! status: ${response?.status}`);
       return response;
     } catch (error) {
       if (retries <= 0) throw error;
