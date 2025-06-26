@@ -752,7 +752,7 @@ let width = img.width;
 `).join('');
 
       const response = await this.fetchWithRetry(
-        \`/api/list?\${new URLSearchParams({ 
+        `/api/list?\${new URLSearchParams({ 
           page: this.currentPage, 
           limit: this.itemsPerPage,
           _: Date.now() 
