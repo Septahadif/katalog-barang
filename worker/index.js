@@ -96,7 +96,7 @@ export default {
           env.KATALOG.get("items"),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error("KV timeout")), 3000)
-        ]);
+        ));
         
         let items = [];
         try {
