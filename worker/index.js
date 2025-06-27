@@ -641,10 +641,7 @@ class BarangApp {
     this.scrollDebounce = null;
     this.imageLoadTimeouts = new Map();
     
-    this.observer = new IntersectionObserver(
-      (entries) => this.handleScroll(entries),
-      { threshold: 0.1 }
-    );
+    this.observer = null; // tidak dipakai lagi
 
     this.initElements();
     this.initEventListeners();
@@ -681,6 +678,7 @@ class BarangApp {
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
     this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
+    window.addEventListener('scroll', () => this.onScroll());
   }
 
   cleanup() {
@@ -981,6 +979,22 @@ class BarangApp {
     });
   }
 
+onScroll() {
+  if (this.isLoading || !this.hasMoreItems) return;
+
+  const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+  const scrollHeight = document.documentElement.scrollHeight;
+  const clientHeight = document.documentElement.clientHeight;
+
+  const scrolledPercentage = (scrollTop + clientHeight) / scrollHeight;
+
+  if (scrolledPercentage >= 0.8) {
+    this.currentPage++;
+    this.loadBarang();
+  }
+}
+
+
   async loadBarang() {
     if (this.isLoading || !this.hasMoreItems) return;
     this.isLoading = true;
@@ -1033,10 +1047,7 @@ class BarangApp {
         const itemElement = this.createItemElement(item, index);
         this.katalog.appendChild(itemElement);
         
-        if (index === items.length - 1) {
-          this.observer.observe(itemElement);
-        }
-      });
+       
 
     } catch (error) {
       console.error('Failed to load items:', error);
