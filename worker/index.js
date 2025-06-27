@@ -626,7 +626,7 @@ const INDEX_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-const SCRIPT_JS = "use strict";
+const SCRIPT_JS = `"use strict";
 class BarangApp {
   constructor() {
     this.isAdmin = false;
@@ -641,7 +641,6 @@ class BarangApp {
     this.scrollDebounce = null;
     this.imageLoadTimeouts = new Map();
     
-    // New scroll handler instead of IntersectionObserver
     this.scrollHandler = () => this.handleScroll();
 
     this.initElements();
@@ -679,8 +678,6 @@ class BarangApp {
     this.satuanInput.addEventListener('input', (e) => this.autoCapitalize(e));
     this.namaInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
     this.satuanInput.addEventListener('blur', (e) => this.autoCapitalize(e, true));
-    
-    // Add scroll event listener
     window.addEventListener('scroll', this.scrollHandler);
   }
 
@@ -688,36 +685,14 @@ class BarangApp {
     if (this.abortController) {
       this.abortController.abort();
     }
+    this.observer.disconnect();
     if (this.scrollDebounce) {
       clearTimeout(this.scrollDebounce);
     }
     this.imageLoadTimeouts.forEach(timeout => clearTimeout(timeout));
     this.imageLoadTimeouts.clear();
     
-    // Remove scroll event listener
     window.removeEventListener('scroll', this.scrollHandler);
-  }
-
-  getScrollPercentage() {
-    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-    const scrollHeight = document.documentElement.scrollHeight;
-    const clientHeight = document.documentElement.clientHeight;
-    return (scrollTop / (scrollHeight - clientHeight)) * 100;
-  }
-
-  handleScroll() {
-    if (this.isLoading || !this.hasMoreItems) return;
-    
-    if (this.scrollDebounce) {
-      clearTimeout(this.scrollDebounce);
-    }
-    
-    if (this.getScrollPercentage() > 80) {
-      this.scrollDebounce = setTimeout(() => {
-        this.currentPage++;
-        this.loadBarang();
-      }, 200);
-    }
   }
 
   autoCapitalize(event, force = false) {
@@ -729,10 +704,10 @@ class BarangApp {
     const startPos = input.selectionStart;
     const endPos = input.selectionEnd;
     
-    let newValue = originalValue.replace(/\b\w/g, char => char.toUpperCase());
+    let newValue = originalValue.replace(/\\b\\w/g, char => char.toUpperCase());
     
     if (force && newValue !== originalValue) {
-      newValue = newValue.replace(/\s+/g, ' ').trim();
+      newValue = newValue.replace(/\\s+/g, ' ').trim();
     }
     
     if (newValue !== originalValue) {
@@ -792,7 +767,7 @@ class BarangApp {
       
       clearTimeout(timeoutId);
       
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);
       
       return response;
     } catch (error) {
@@ -861,7 +836,7 @@ class BarangApp {
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) {
+    if (file.size > 2 * 1024 * 1024) { // 2MB max
       this.showError('Ukuran gambar terlalu besar. Maksimal 2MB.');
       this.fileInput.value = '';
       return;
@@ -965,6 +940,7 @@ class BarangApp {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
+          // Resize to max 800px while maintaining aspect ratio
           const maxSize = 800;
           let width = img.width;
           let height = img.height;
@@ -986,6 +962,7 @@ class BarangApp {
           
           ctx.drawImage(img, 0, 0, width, height);
           
+          // Convert to WebP for smaller size (fallback to jpeg)
           const base64 = canvas.toDataURL('image/webp', 0.85) || 
                          canvas.toDataURL('image/jpeg', 0.85);
           resolve(base64);
@@ -1012,32 +989,32 @@ class BarangApp {
 
     try {
       if (this.currentPage === 1) {
-        this.katalog.innerHTML = Array.from({ length: 6 }, () => `
+        this.katalog.innerHTML = Array.from({ length: 6 }, () => \`
           <div class="bg-white p-3 rounded shadow skeleton-item">
             <div class="skeleton-image"></div>
             <div class="skeleton-text medium"></div>
             <div class="skeleton-text short"></div>
           </div>
-        `).join('');
+        \`).join('');
       }
 
       const response = await this.fetchWithRetry(
-        `/api/list?${new URLSearchParams({ 
+        \`/api/list?\${new URLSearchParams({ 
           page: this.currentPage, 
           limit: this.itemsPerPage,
           _: Date.now() 
-        })}`
+        })}\`
       );
 
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
-        throw new Error(`Invalid response: ${text.substring(0, 100)}`);
+        throw new Error(\`Invalid response: \${text.substring(0, 100)}\`);
       }
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || `HTTP error! status: ${response.status}`);
+        throw new Error(error.message || \`HTTP error! status: \${response.status}\`);
       }
 
       const { items, total, page, limit, hasMore } = await response.json();
@@ -1054,7 +1031,7 @@ class BarangApp {
 
       items.forEach((item, index) => {
         const itemElement = this.createItemElement(item, index);
-        this.katalog.appendChild(itemElement);
+        this.katalog.appendChild(itemElement); 
       });
 
     } catch (error) {
@@ -1078,6 +1055,29 @@ class BarangApp {
     }
   }
 
+  getScrollPercentage() {
+  const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+  const scrollHeight = document.documentElement.scrollHeight;
+  const clientHeight = document.documentElement.clientHeight;
+  return (scrollTop / (scrollHeight - clientHeight)) * 100;
+}
+
+  handleScroll() {
+  if (this.isLoading || !this.hasMoreItems) return;
+  
+  if (this.scrollDebounce) {
+    clearTimeout(this.scrollDebounce);
+  }
+  
+  // Trigger load at 80% scroll
+  if (this.getScrollPercentage() > 80) {
+    this.scrollDebounce = setTimeout(() => {
+      this.currentPage++;
+      this.loadBarang();
+    }, 200);
+  }
+}
+
   createItemElement(item, index) {
     const escapedId = this.escapeHtml(item.id);
     const escapedNama = this.escapeHtml(item.nama);
@@ -1086,14 +1086,14 @@ class BarangApp {
     
     const itemElement = document.createElement('div');
     itemElement.className = 'bg-white p-3 rounded shadow item-animate';
-    itemElement.style.animationDelay = `${index * 0.05}s`;
+    itemElement.style.animationDelay = \`\${index * 0.05}s\`;
     itemElement.setAttribute('data-id', escapedId);
     
-    itemElement.innerHTML = `
+    itemElement.innerHTML = \`
       <div class="image-container relative">
         <img 
-          src="/api/image/${escapedId}?t=${item.timestamp || Date.now()}" 
-          alt="${escapedNama}" 
+          src="/api/image/\${escapedId}?t=\${item.timestamp || Date.now()}" 
+          alt="\${escapedNama}" 
           class="loading" 
           loading="lazy"
           onload="this.classList.remove('loading'); this.classList.add('loaded'); window.app.clearImageTimeout(this)"
@@ -1103,13 +1103,14 @@ class BarangApp {
           <button class="retry-btn" onclick="window.app.retryLoadImage(this)">Muat Ulang</button>
         </div>
       </div>
-      <h2 class="text-lg font-semibold mt-2">${escapedNama}</h2>
-      <p class="text-sm text-gray-600">Rp ${hargaFormatted} / ${escapedSatuan}</p>
-      ${this.isAdmin ? 
-        `<button onclick="app.hapusBarang('${escapedId}')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>` 
+      <h2 class="text-lg font-semibold mt-2">\${escapedNama}</h2>
+      <p class="text-sm text-gray-600">Rp \${hargaFormatted} / \${escapedSatuan}</p>
+      \${this.isAdmin ? 
+        \`<button onclick="app.hapusBarang('\${escapedId}')" class="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">Hapus</button>\` 
         : ''}
-    `;
+    \`;
     
+    // Set timeout untuk gambar
     const img = itemElement.querySelector('img');
     this.setImageTimeout(img);
     
@@ -1121,7 +1122,7 @@ class BarangApp {
       if (img && img.classList.contains('loading')) {
         img.dispatchEvent(new Event('error'));
       }
-    }, 8000);
+    }, 8000); // Timeout 8 detik
     
     this.imageLoadTimeouts.set(img, timeoutId);
   }
@@ -1140,6 +1141,7 @@ class BarangApp {
     if (retryOverlay) {
       retryOverlay.classList.remove('hidden');
       
+      // Coba muat ulang otomatis setelah 3 detik
       setTimeout(() => {
         if (retryOverlay && !retryOverlay.classList.contains('hidden')) {
           this.retryLoadImage(retryOverlay.querySelector('.retry-btn'));
@@ -1155,9 +1157,10 @@ class BarangApp {
     
     if (!img) return;
     
+    // Tambahkan timestamp baru untuk bypass cache
     const newSrc = img.src.includes('?') ? 
-      `${img.src.split('?')[0]}?t=${Date.now()}` : 
-      `${img.src}?t=${Date.now()}`;
+      \`\${img.src.split('?')[0]}?t=\${Date.now()}\` : 
+      \`\${img.src}?t=\${Date.now()}\`;
     
     img.src = newSrc;
     this.setImageTimeout(img);
@@ -1181,7 +1184,7 @@ class BarangApp {
       
       this.showError('Barang berhasil dihapus');
       
-      const itemElement = document.querySelector(`[data-id="${id}"]`);
+      const itemElement = document.querySelector(\`[data-id="\${id}"]\`);
       if (itemElement) {
         itemElement.remove();
       }
@@ -1210,3 +1213,4 @@ window.addEventListener('beforeunload', () => {
     window.app.cleanup();
   }
 });
+`;
