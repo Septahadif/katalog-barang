@@ -925,7 +925,7 @@ class BarangApp {
 
   addNewItemToView(item) {
     const itemElement = this.createItemElement(item, 0);
-    this.katalog.append(itemElement);
+    this.katalog.insertBefore(itemElement, this.katalog.firstChild);
     itemElement.scrollIntoView({ behavior: 'smooth' });
   }
 
