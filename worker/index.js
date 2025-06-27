@@ -1070,7 +1070,7 @@ class BarangApp {
   }
   
   // Trigger load at 80% scroll
-  if (this.getScrollPercentage() > 80) {
+  if (this.getScrollPercentage() > 60) {
     this.scrollDebounce = setTimeout(() => {
       this.currentPage++;
       this.loadBarang();
